@@ -378,9 +378,9 @@ def monitor_positions():
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
                     
-                    output.append(f"  Position #{token_id} ({sym0}-{sym1}, fee {fee/10000}%): {emoji}")
+                    output.append(f"  Position ({sym0}-{sym1}, fee {fee/10000}%): {emoji}")
                     output.append(f"    Balance USD: ${balance_usd:.2f}")
-                    output.append(f"    Uncollected fees: {uncollected0:.6f} {sym0} + {uncollected1:.6f} {sym1} (${uncollected_fees_usd:.2f})")
+                    output.append(f"    Uncollected fees: ${uncollected_fees_usd:.2f}")
                 if has_positions:
                     output.append("---")
             except Exception as e:
