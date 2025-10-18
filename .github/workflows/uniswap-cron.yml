@@ -2,30 +2,30 @@ name: Uniswap LP Monitor Cron
 
 on:
   schedule:
-    - cron: '0 9 * * *'  # Ежедневно в 9:00 UTC. Измените: e.g., '*/30 * * * *' для каждые 30 мин
-  workflow_dispatch:  # Для ручного запуска кнопкой в Actions
+    - cron: '0 4,8,12,16,20 * * *'  # Каждые 4 часа: 7:00, 11:00, 15:00, 19:00, 23:00 MSK (UTC+3)
+  workflow_dispatch:  # Для ручного запуска
 
 jobs:
   run-monitor:
-    runs-on: ubuntu-latest  # Бесплатный сервер GitHub
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4  # Скачивает ваш репозиторий
+      uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.10'  # Версия для web3
+        python-version: '3.10'
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt  # Устанавливает web3 и requests из вашего файла
+        pip install -r requirements.txt
 
     - name: Run script
-      run: python uniswap_monitor.py  # Запускает ваш код — он выведет логи и отправит в Telegram
+      run: python uniswap_monitor.py
 
     - name: Log completion
-      if: always()  # Показывает "Готово!" даже при ошибке
+      if: always()
       run: echo "Cron job completed! Check Telegram for results."
