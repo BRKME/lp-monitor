@@ -2,7 +2,7 @@ name: Uniswap LP Monitor Cron
 
 on:
   schedule:
-    - cron: '0 4,8,12,16,20 * * *'  # Каждые 4 часа: 7:00, 11:00, 15:00, 19:00, 23:00 MSK (UTC+3)
+    - cron: '0 4,16 * * *'  # Каждые 4 часа: 7:00, 11:00, 15:00, 19:00, 23:00 MSK (UTC+3)
   workflow_dispatch:  # Для ручного запуска
 
 jobs:
