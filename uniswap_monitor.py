@@ -254,9 +254,9 @@ addresses = [
 ]
 
 short_names = {
-    '0x17e6d71d30d260e30bb7721c63539694ab02b036': 'Papa Dont drink alcohol today',
+    '0x17e6d71d30d260e30bb7721c63539694ab02b036': '🔖 Papa , Dont drink alcohol today',
     '0x91dad140af2800b2d660e530b9f42500eee474a0': '2F_MMS',
-    '0x4e7240952c21c811d9e1237a328b927685a21418': '3F_NH',
+    '0x4e7240952c21c811d9e1237a328b927685a21418': '3F_BNB',
     '0x3c2c34b9bb0b00145142ffee68475e1ac01c92ba': '4F_Exodus',
     '0x5a51f62d86f5ccb8c7470cea2ac982762049c53c': '5F_BNB'
 }
