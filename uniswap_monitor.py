@@ -1,6 +1,7 @@
 import json
 from web3 import Web3
 import requests
+from datetime import datetime
 
 # Минимальные ABI
 FACTORY_ABI = [
@@ -291,6 +292,23 @@ def send_to_telegram(message):
 
 def monitor_positions():
     output = []
+    
+    # Новый заголовок
+    days_ru = {
+        'Monday': 'понедельник',
+        'Tuesday': 'вторник',
+        'Wednesday': 'среда',
+        'Thursday': 'четверг',
+        'Friday': 'пятница',
+        'Saturday': 'суббота',
+        'Sunday': 'воскресенье'
+    }
+    day_name = days_ru.get(datetime.now().strftime('%A'), 'день')
+    hour = datetime.now().hour
+    time_of_day = "утренний" if hour < 12 else "вечерний"
+    header = f"Привет сегодня {day_name} твой {time_of_day} LP обзор"
+    output.append(header)
+    
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
@@ -379,8 +397,8 @@ def monitor_positions():
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
                     
                     output.append(f"  Position: {sym0}-{sym1}, (fee {fee/10000}%): {emoji}")
-                    output.append(f"  Balance USD: ${balance_usd:.2f}")
-                    output.append(f"  My Salary: ${uncollected_fees_usd:.2f}")
+                    output.append(f"  Balance USD: ${balance_usd:.0f}")
+                    output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
                 if has_positions:
                     output.append("---")
             except Exception as e:
