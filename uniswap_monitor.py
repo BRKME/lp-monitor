@@ -5,7 +5,7 @@ monitor_uniswap_all.py
 Подставь свои ключи в переменные конфигурации ниже или используй переменные окружения.
 
 Требования:
-pip install web3 requests python-dotenv
+pip install web3 requests
 
 Запуск:
 python monitor_uniswap_all.py
@@ -18,9 +18,6 @@ import json
 import requests
 from datetime import datetime
 from web3 import Web3
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # ----------------- CONFIG -----------------
 # Сеть Arbitrum (Uniswap V3)
@@ -37,15 +34,15 @@ ARBITRUM_ADDRESSES = [
 
 # Сеть BNB (для V4 detection / reading)
 BSC_RPC = os.getenv("BSC_RPC", "https://bsc-dataseed.binance.org/")
-BSCSCAN_API_KEY = "2U12DECNS5JQPTNP5Y5PC4V5T3J3CVSACV"  # Прямо в код
+BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY", "2U12DECNS5JQPTNP5Y5PC4V5T3J3CVSACV")  # Подставлен в код
 BNB_ADDRESSES = [
     "0x4e7240952C21C811d9e1237a328b927685A21418",
     "0x5A51f62D86F5CCB8C7470Cea2AC982762049c53c"
 ]
 
 # Telegram
-BOT_TOKEN = "8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8"  # Прямо в код
-CHAT_ID = "350766421"  # Прямо в код
+BOT_TOKEN = "8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8"  # Подставлен в код
+CHAT_ID = "350766421"  # Подставлен в код
 
 # Интервал проверки в секундах
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 60 * 10))  # 10 минут по умолчанию
@@ -205,15 +202,15 @@ def send_to_telegram(text):
 def monitor_v3_arbitrum(w3):
     out_lines = []
     try:
-        pm = w3.eth.contract(address=w3.toChecksumAddress(ARBITRUM_POSITION_MANAGER), abi=POSITION_MANAGER_ABI)
-        factory = w3.eth.contract(address=w3.toChecksumAddress(ARBITRUM_FACTORY), abi=FACTORY_ABI)
+        pm = w3.eth.contract(address=w3.to_checksum_address(ARBITRUM_POSITION_MANAGER), abi=POSITION_MANAGER_ABI)
+        factory = w3.eth.contract(address=w3.to_checksum_address(ARBITRUM_FACTORY), abi=FACTORY_ABI)
     except Exception as e:
         return [f"Error creating contracts for V3: {e}"]
 
     out_lines.append(f"--- Uniswap V3 Arbitrum report: {datetime.utcnow().isoformat()}Z ---")
     for owner in ARBITRUM_ADDRESSES:
         try:
-            owner_ch = w3.toChecksumAddress(owner)
+            owner_ch = w3.to_checksum_address(owner)
             balance = pm.functions.balanceOf(owner_ch).call()
             out_lines.append(f"Owner {owner} positions: {balance}")
             for idx in range(balance):
@@ -229,11 +226,11 @@ def monitor_v3_arbitrum(w3):
                 feeGrowthInside0Last = pos[8]; feeGrowthInside1Last = pos[9]
                 tokensOwed0 = pos[10]; tokensOwed1 = pos[11]
 
-                pool_addr = factory.functions.getPool(w3.toChecksumAddress(token0), w3.toChecksumAddress(token1), fee).call()
+                pool_addr = factory.functions.getPool(w3.to_checksum_address(token0), w3.to_checksum_address(token1), fee).call()
                 if int(pool_addr, 16) == 0:
                     out_lines.append(f"  tokenId {token_id} — pool not found")
                     continue
-                pool = w3.eth.contract(address=w3.toChecksumAddress(pool_addr), abi=POOL_ABI)
+                pool = w3.eth.contract(address=w3.to_checksum_address(pool_addr), abi=POOL_ABI)
                 slot0 = pool.functions.slot0().call()
                 sqrt_price_x96 = slot0[0]
                 current_tick = slot0[1]
@@ -242,8 +239,8 @@ def monitor_v3_arbitrum(w3):
                 sqrt_upper = get_sqrt_ratio_at_tick(tick_upper)
                 amount0_raw, amount1_raw = get_amounts_for_liquidity(sqrt_price_x96, sqrt_lower, sqrt_upper, liquidity)
 
-                token0c = w3.eth.contract(address=w3.toChecksumAddress(token0), abi=ERC20_ABI)
-                token1c = w3.eth.contract(address=w3.toChecksumAddress(token1), abi=ERC20_ABI)
+                token0c = w3.eth.contract(address=w3.to_checksum_address(token0), abi=ERC20_ABI)
+                token1c = w3.eth.contract(address=w3.to_checksum_address(token1), abi=ERC20_ABI)
                 try:
                     dec0 = token0c.functions.decimals().call()
                 except:
@@ -341,13 +338,13 @@ def find_erc721_contracts_for_owner(owner, page=1, offset=200):
 
 def try_position_manager_bsc(w3_bsc, contract_addr, owner):
     try:
-        c = w3_bsc.eth.contract(address=w3_bsc.toChecksumAddress(contract_addr), abi=ERC721_MIN_ABI)
-        balance = c.functions.balanceOf(w3_bsc.toChecksumAddress(owner)).call()
+        c = w3_bsc.eth.contract(address=w3_bsc.to_checksum_address(contract_addr), abi=ERC721_MIN_ABI)
+        balance = c.functions.balanceOf(w3_bsc.to_checksum_address(owner)).call()
         if balance == 0:
             return None
         token_id = None
         try:
-            token_id = c.functions.tokenOfOwnerByIndex(w3_bsc.toChecksumAddress(owner), 0).call()
+            token_id = c.functions.tokenOfOwnerByIndex(w3_bsc.to_checksum_address(owner), 0).call()
         except Exception:
             # maybe contract not enumerable, try to fetch from BscScan tx list (not implemented here)
             token_id = None
@@ -367,12 +364,12 @@ def try_position_manager_bsc(w3_bsc, contract_addr, owner):
 def monitor_v4_bsc():
     out = []
     w3_bsc = Web3(Web3.HTTPProvider(BSC_RPC))
-    if not w3_bsc.isConnected():
+    if not w3_bsc.is_connected():
         out.append("Cannot connect to BSC RPC")
         return out
     out.append(f"--- Uniswap V4 (BSC) probe: {datetime.utcnow().isoformat()}Z ---")
     for owner in BNB_ADDRESSES:
-        out.append(f"Owner {owner} scan (BscScan tokesnfttx)...")
+        out.append(f"Owner {owner} scan (BscScan tokennfttx)...")
         try:
             candidates = find_erc721_contracts_for_owner(owner)
             if not candidates:
@@ -398,7 +395,7 @@ def build_report():
     report_lines = []
     # prepare web3
     w3_arb = Web3(Web3.HTTPProvider(ARBITRUM_RPC))
-    if not w3_arb.isConnected():
+    if not w3_arb.is_connected():
         report_lines.append("Cannot connect to Arbitrum RPC")
     else:
         try:
