@@ -2,6 +2,7 @@ import json
 from web3 import Web3
 import requests
 from datetime import datetime
+import time  # Добавлен для задержек
 
 # Минимальные ABI
 FACTORY_ABI = [
@@ -230,7 +231,7 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
 
     return fee_growth_inside0, fee_growth_inside1
 
-# Конфиг сетей
+# Конфиг сетей (добавлена поддержка v4 для BNB через PancakeSwap v4, но с v3 ABI - если не работает, нужно обновить ABI)
 chains = {
     'arbitrum': {
         'rpc': 'https://arb1.arbitrum.io/rpc',
@@ -240,8 +241,8 @@ chains = {
     },
     'bnb': {
         'rpc': 'https://bsc-dataseed.binance.org/',
-        'factory': '0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7',
-        'position_manager': '0x7b8A01B39D58278b5DE7e48c8449c9f4F5170613',
+        'factory': '0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b',  # CLPoolManager for v4
+        'position_manager': '0x55f4c8abA71A1e923edC303eb4fEfF14608cC226',  # CLPositionManager for v4
         'platform': 'binance-smart-chain',
     }
 }
@@ -331,6 +332,7 @@ def monitor_positions():
                     output.append(f"{short_name} on {chain_name.capitalize()}:")
                     has_positions = True
                 for i in range(num_pos):
+                    time.sleep(0.5)  # Задержка между позициями
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
                     pos = pm_contract.functions.positions(token_id).call()
                     liquidity = pos[7]
@@ -404,6 +406,7 @@ def monitor_positions():
                     output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
                 if has_positions:
                     output.append("---")
+                time.sleep(2)  # Задержка между адресами для избежания rate limit
             except Exception as e:
                 output.append(f"Error for {short_name} on {chain_name}: {e}")
     
