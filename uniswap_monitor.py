@@ -2,10 +2,10 @@ import json
 from web3 import Web3
 import requests
 from datetime import datetime
-import time  # Для задержек
+import time
 
-# Минимальные ABI для V3 (Arbitrum)
-FACTORY_ABI_V3 = [  # ... (твой оригинальный FACTORY_ABI)
+# Минимальные ABI для Uniswap V3 (общий для Arbitrum/BSC)
+FACTORY_ABI_V3 = [
     {
         "inputs": [
             {"internalType": "address", "name": "tokenA", "type": "address"},
@@ -19,15 +19,102 @@ FACTORY_ABI_V3 = [  # ... (твой оригинальный FACTORY_ABI)
     }
 ]
 
-POOL_ABI_V3 = [  # ... (твой оригинальный POOL_ABI)
-    # slot0, liquidity, feeGrowthGlobal0X128, feeGrowthGlobal1X128, ticks
+POOL_ABI_V3 = [
+    {
+        "inputs": [],
+        "name": "slot0",
+        "outputs": [
+            {"internalType": "uint160", "name": "sqrtPriceX96", "type": "uint160"},
+            {"internalType": "int24", "name": "tick", "type": "int24"},
+            {"internalType": "uint16", "name": "observationIndex", "type": "uint16"},
+            {"internalType": "uint16", "name": "observationCardinality", "type": "uint16"},
+            {"internalType": "uint16", "name": "observationCardinalityNext", "type": "uint16"},
+            {"internalType": "uint8", "name": "feeProtocol", "type": "uint8"},
+            {"internalType": "bool", "name": "unlocked", "type": "bool"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "liquidity",
+        "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "feeGrowthGlobal0X128",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "feeGrowthGlobal1X128",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{"internalType": "int24", "name": "tick", "type": "int24"}],
+        "name": "ticks",
+        "outputs": [
+            {"internalType": "uint128", "name": "liquidityGross", "type": "uint128"},
+            {"internalType": "int128", "name": "liquidityNet", "type": "int128"},
+            {"internalType": "uint256", "name": "feeGrowthOutside0X128", "type": "uint256"},
+            {"internalType": "uint256", "name": "feeGrowthOutside1X128", "type": "uint256"},
+            {"internalType": "int56", "name": "tickCumulativeOutside", "type": "int56"},
+            {"internalType": "uint160", "name": "secondsPerLiquidityOutsideX128", "type": "uint160"},
+            {"internalType": "uint32", "name": "secondsOutside", "type": "uint32"},
+            {"internalType": "bool", "name": "initialized", "type": "bool"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
 ]
 
-POSITION_MANAGER_ABI_V3 = [  # ... (твой оригинальный POSITION_MANAGER_ABI)
-    # balanceOf, tokenOfOwnerByIndex, positions (V3 format)
+POSITION_MANAGER_ABI_V3 = [
+    {
+        "inputs": [{"internalType": "address", "name": "owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"internalType": "uint256", "name": "balance", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "owner", "type": "address"},
+            {"internalType": "uint256", "name": "index", "type": "uint256"}
+        ],
+        "name": "tokenOfOwnerByIndex",
+        "outputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+        "name": "positions",
+        "outputs": [
+            {"internalType": "uint96", "name": "nonce", "type": "uint96"},
+            {"internalType": "address", "name": "operator", "type": "address"},
+            {"internalType": "address", "name": "token0", "type": "address"},
+            {"internalType": "address", "name": "token1", "type": "address"},
+            {"internalType": "uint24", "name": "fee", "type": "uint24"},
+            {"internalType": "int24", "name": "tickLower", "type": "int24"},
+            {"internalType": "int24", "name": "tickUpper", "type": "int24"},
+            {"internalType": "uint128", "name": "liquidity", "type": "uint128"},
+            {"internalType": "uint256", "name": "feeGrowthInside0LastX128", "type": "uint256"},
+            {"internalType": "uint256", "name": "feeGrowthInside1LastX128", "type": "uint256"},
+            {"internalType": "uint128", "name": "tokensOwed0", "type": "uint128"},
+            {"internalType": "uint128", "name": "tokensOwed1", "type": "uint128"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
 ]
 
-# ABI для V4 PoolManager (BNB)
+# ABI for V4 PoolManager (BNB)
 POOL_MANAGER_ABI_V4 = [
     {
         "inputs": [{"internalType": "bytes32", "name": "poolId", "type": "bytes32"}],
@@ -83,9 +170,24 @@ POOL_MANAGER_ABI_V4 = [
     }
 ]
 
-# V4 PositionManager ABI (positions returns PoolKey struct)
 POSITION_MANAGER_ABI_V4 = [
-    # ... (V3-like, but positions includes PoolKey)
+    {
+        "inputs": [{"internalType": "address", "name": "owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"internalType": "uint256", "name": "balance", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"internalType": "address", "name": "owner", "type": "address"},
+            {"internalType": "uint256", "name": "index", "type": "uint256"}
+        ],
+        "name": "tokenOfOwnerByIndex",
+        "outputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
     {
         "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
         "name": "positions",
@@ -109,50 +211,138 @@ POSITION_MANAGER_ABI_V4 = [
         ],
         "stateMutability": "view",
         "type": "function"
-    },
-    # balanceOf and tokenOfOwnerByIndex same as V3
-    # ... (добавь из POSITION_MANAGER_ABI_V3)
-]
-
-ERC20_ABI = [  # ... (твой оригинальный)
-]
-
-# ... (TickMath and LiquidityAmounts functions remain the same)
-
-# Конфиг сетей
-chains = {
-    'arbitrum': {
-        'rpc': 'https://arb1.arbitrum.io/rpc',
-        'factory': '0x1F98431c8aD98523631AE4a59f267346ea31F984',  # V3 Factory
-        'position_manager': '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',  # V3 NonfungiblePositionManager
-        'platform': 'arbitrum-one',
-        'version': 'v3'
-    },
-    'bnb': {
-        'rpc': 'https://bsc-dataseed.binance.org/',
-        'pool_manager': '0x46a15B0b27311cEdF172AB29E4F4766fBe7f4364',  # PoolManager for V4 (from search)
-        'position_manager': '0x55f4c8abA71A1e923edC303eb4fEfF14608cC226',  # CLPositionManager
-        'platform': 'binance-smart-chain',
-        'version': 'v4'
     }
-}
+]
 
-# ... (addresses, short_names, get_token_price, send_to_telegram remain the same)
+ERC20_ABI = [
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "type": "function"
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function"
+    }
+]
 
-def encode_pool_key(w3, pool_key):
-    # PoolKey: (currency0, currency1, fee, tickSpacing, hooks)
-    encoded = w3.codec.encode(['address', 'address', 'uint24', 'int24', 'address'], pool_key)
-    return encoded
+# Функции для TickMath (полный порт из оригинала)
+def get_sqrt_ratio_at_tick(tick):
+    MAX_TICK = 887272
+    abs_tick = abs(tick)
+    if abs_tick > MAX_TICK:
+        raise ValueError("Tick out of range")
+    ratio = 0xfffcb933bd6fad37aa2d162d1a594001 if (abs_tick & 0x1) != 0 else 0x100000000000000000000000000000000
+    if (abs_tick & 0x2) != 0:
+        ratio = (ratio * 0xfff97272373d413259a46990580e213a) >> 128
+    if (abs_tick & 0x4) != 0:
+        ratio = (ratio * 0xfff2e50f5f656932ef12357cf3c7fdcc) >> 128
+    if (abs_tick & 0x8) != 0:
+        ratio = (ratio * 0xffe5caca7e10e4e61c3624eaa0941cd0) >> 128
+    if (abs_tick & 0x10) != 0:
+        ratio = (ratio * 0xffcb9843d60f6159c9db58835c926644) >> 128
+    if (abs_tick & 0x20) != 0:
+        ratio = (ratio * 0xff973b41fa98c081472e6896dfb254c0) >> 128
+    if (abs_tick & 0x40) != 0:
+        ratio = (ratio * 0xff2ea16466c96a3843ec78b326b52861) >> 128
+    if (abs_tick & 0x80) != 0:
+        ratio = (ratio * 0xfe5dee046a99a2a811c461f1969c3053) >> 128
+    if (abs_tick & 0x100) != 0:
+        ratio = (ratio * 0xfcbe86c7900a88aedcffc83b479aa3a4) >> 128
+    if (abs_tick & 0x200) != 0:
+        ratio = (ratio * 0xf987a7253ac413176f2b074cf7815e54) >> 128
+    if (abs_tick & 0x400) != 0:
+        ratio = (ratio * 0xf3392b0822b70005940c7a398e4b70f3) >> 128
+    if (abs_tick & 0x800) != 0:
+        ratio = (ratio * 0xe7159475a2c29b7443b29c7fa6e889d9) >> 128
+    if (abs_tick & 0x1000) != 0:
+        ratio = (ratio * 0xd097f3bdfd2022b8845ad8f792aa5825) >> 128
+    if (abs_tick & 0x2000) != 0:
+        ratio = (ratio * 0xa9f746462d870fdf8a65dc1f90e061e5) >> 128
+    if (abs_tick & 0x4000) != 0:
+        ratio = (ratio * 0x70d869a156d2a1b890bb3df62baf32f7) >> 128
+    if (abs_tick & 0x8000) != 0:
+        ratio = (ratio * 0x31be135f97d08fd981231505542fcfa6) >> 128
+    if (abs_tick & 0x10000) != 0:
+        ratio = (ratio * 0x9aa508b5b7a84e1c677de54f3e99bc9) >> 128
+    if (abs_tick & 0x20000) != 0:
+        ratio = (ratio * 0x5d6af8dedb81196699c329225ee604) >> 128
+    if (abs_tick & 0x40000) != 0:
+        ratio = (ratio * 0x2216e584f5fa1ea926041bedfe98) >> 128
+    if (abs_tick & 0x80000) != 0:
+        ratio = (ratio * 0x48a170391f7dc42444e8fa2) >> 128
 
+    if tick > 0:
+        ratio = ((1 << 256) - 1) // ratio
+
+    # Округление вверх если нужно
+    sqrt_price_x96 = (ratio >> 32) + (0 if ratio % (1 << 32) == 0 else 1)
+    return sqrt_price_x96
+
+# Функции для LiquidityAmounts (полный порт)
+def get_amount0_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
+    if sqrt_ratio_a > sqrt_ratio_b:
+        sqrt_ratio_a, sqrt_ratio_b = sqrt_ratio_b, sqrt_ratio_a
+    return (((liquidity << 96) * (sqrt_ratio_b - sqrt_ratio_a)) // sqrt_ratio_b) // sqrt_ratio_a
+
+def get_amount1_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
+    if sqrt_ratio_a > sqrt_ratio_b:
+        sqrt_ratio_a, sqrt_ratio_b = sqrt_ratio_b, sqrt_ratio_a
+    return liquidity * (sqrt_ratio_b - sqrt_ratio_a) // (1 << 96)
+
+def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
+    if sqrt_a > sqrt_b:
+        sqrt_a, sqrt_b = sqrt_b, sqrt_a
+
+    if sqrt_ratio <= sqrt_a:
+        return get_amount0_for_liquidity(sqrt_a, sqrt_b, liquidity), 0
+    elif sqrt_ratio < sqrt_b:
+        amount0 = get_amount0_for_liquidity(sqrt_ratio, sqrt_b, liquidity)
+        amount1 = get_amount1_for_liquidity(sqrt_a, sqrt_ratio, liquidity)
+        return amount0, amount1
+    else:
+        return 0, get_amount1_for_liquidity(sqrt_a, sqrt_b, liquidity)
+
+# Функция для расчета feeGrowthInside (V3)
+def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
+    time.sleep(0.2)
+    if current_tick >= tick_lower:
+        fee_growth_below0 = pool_contract.functions.ticks(tick_lower).call()[2]
+        fee_growth_below1 = pool_contract.functions.ticks(tick_lower).call()[3]
+    else:
+        time.sleep(0.2)
+        fee_growth_below0 = fee_growth_global0 - pool_contract.functions.ticks(tick_lower).call()[2]
+        fee_growth_below1 = fee_growth_global1 - pool_contract.functions.ticks(tick_lower).call()[3]
+
+    time.sleep(0.2)
+    if current_tick < tick_upper:
+        fee_growth_above0 = pool_contract.functions.ticks(tick_upper).call()[2]
+        fee_growth_above1 = pool_contract.functions.ticks(tick_upper).call()[3]
+    else:
+        time.sleep(0.2)
+        fee_growth_above0 = fee_growth_global0 - pool_contract.functions.ticks(tick_upper).call()[2]
+        fee_growth_above1 = fee_growth_global1 - pool_contract.functions.ticks(tick_upper).call()[3]
+
+    fee_growth_inside0 = fee_growth_global0 - fee_growth_below0 - fee_growth_above0
+    fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
+
+    return fee_growth_inside0, fee_growth_inside1
+
+# V4 functions
 def get_pool_id(w3, pool_key):
-    encoded = encode_pool_key(w3, pool_key)
+    # pool_key = (currency0, currency1, fee, tickSpacing, hooks)
+    encoded = w3.codec.encode(['address', 'address', 'uint24', 'int24', 'address'], pool_key)
     return w3.keccak(encoded)
 
 def get_fee_growth_inside_v4(pool_contract, pool_id, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
-    # Use getTickInfo for below and above
-    time.sleep(1)  # Delay for rate limit
+    time.sleep(0.2)
     tick_info_lower = pool_contract.functions.getTickInfo(pool_id, tick_lower).call()
-    time.sleep(1)
+    time.sleep(0.2)
     tick_info_upper = pool_contract.functions.getTickInfo(pool_id, tick_upper).call()
     
     fee_growth_below0 = tick_info_lower[2] if current_tick >= tick_lower else fee_growth_global0 - tick_info_lower[2]
@@ -166,105 +356,35 @@ def get_fee_growth_inside_v4(pool_contract, pool_id, tick_lower, tick_upper, cur
     
     return fee_growth_inside0, fee_growth_inside1
 
-def monitor_positions():
-    output = []
-    
-    # Header (same)
-    # ...
-    
-    for chain_name, config in chains.items():
-        w3 = Web3(Web3.HTTPProvider(config['rpc']))
-        if not w3.is_connected():
-            output.append(f"Error connecting to {chain_name}")
-            continue
-        
-        if config.get('version') == 'v3':
-            # V3 logic (Arbitrum)
-            pm_address = w3.to_checksum_address(config['position_manager'])
-            factory_address = w3.to_checksum_address(config['factory'])
-            pm_contract = w3.eth.contract(address=pm_address, abi=POSITION_MANAGER_ABI_V3)
-            factory_contract = w3.eth.contract(address=factory_address, abi=FACTORY_ABI_V3)
-            pool_abi = POOL_ABI_V3
-            get_fee_growth_func = get_fee_growth_inside  # V3 func
-        else:  # V4 (BNB)
-            pm_address = w3.to_checksum_address(config['position_manager'])
-            pool_manager_address = w3.to_checksum_address(config['pool_manager'])
-            pm_contract = w3.eth.contract(address=pm_address, abi=POSITION_MANAGER_ABI_V4)
-            pool_contract = w3.eth.contract(address=pool_manager_address, abi=POOL_MANAGER_ABI_V4)
-            pool_abi = POOL_MANAGER_ABI_V4  # Not used directly
-            get_fee_growth_func = get_fee_growth_inside_v4  # V4 func
-        
-        for owner in addresses:
-            short_name = short_names.get(owner.lower(), 'Unknown')
-            has_positions = False
-            try:
-                owner_checksum = w3.to_checksum_address(owner)
-                num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
-                if num_pos > 0:
-                    output.append(f"{short_name} on {chain_name.capitalize()}:")
-                    has_positions = True
-                for i in range(num_pos):
-                    time.sleep(1)  # Delay per position
-                    token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
-                    pos = pm_contract.functions.positions(token_id).call()
-                    liquidity = pos[6] if config.get('version') == 'v4' else pos[7]  # Adjust index for V4 (poolKey shifts)
-                    if liquidity == 0:
-                        continue
-                    
-                    if config.get('version') == 'v3':
-                        # V3 logic (same as before)
-                        token0 = pos[2]
-                        token1 = pos[3]
-                        fee = pos[4]
-                        tick_lower = pos[5]
-                        tick_upper = pos[6]
-                        # ... (rest V3)
-                        pool_addr = factory_contract.functions.getPool(token0_checksum, token1_checksum, fee).call()
-                        if pool_addr == '0x0000000000000000000000000000000000000000':
-                            continue
-                        pool_contract_local = w3.eth.contract(address=w3.to_checksum_address(pool_addr), abi=POOL_ABI_V3)
-                        slot0 = pool_contract_local.functions.slot0().call()
-                        # ... (amounts, fees, etc.)
-                    else:  # V4 logic
-                        pool_key = pos[2]  # PoolKey tuple: (currency0, currency1, fee, tickSpacing, hooks)
-                        token0, token1, fee, tick_spacing, hooks = pool_key
-                        token0_checksum = w3.to_checksum_address(token0)
-                        token1_checksum = w3.to_checksum_address(token1)
-                        tick_lower = pos[3]
-                        tick_upper = pos[4]
-                        fee_growth_inside0_last = pos[6]
-                        fee_growth_inside1_last = pos[7]
-                        tokens_owed0 = pos[8]
-                        tokens_owed1 = pos[9]
-                        
-                        pool_id = get_pool_id(w3, pool_key)
-                        time.sleep(1)
-                        slot0 = pool_contract.functions.getSlot0(pool_id).call()
-                        sqrt_price_x96 = slot0[0]
-                        current_tick = slot0[1]
-                        
-                        # ... (in_range, amounts same)
-                        
-                        # Fees
-                        time.sleep(1)
-                        fee_growth_global0 = pool_contract.functions.getFeeGrowthGlobal0X128(pool_id).call()
-                        time.sleep(1)
-                        fee_growth_global1 = pool_contract.functions.getFeeGrowthGlobal1X128(pool_id).call()
-                        fee_growth_inside0, fee_growth_inside1 = get_fee_growth_func(pool_contract, pool_id, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
-                        
-                        # ... (accrued, uncollected same)
-                    
-                    # Common output
-                    # ... (sym0, sym1, balance_usd, etc.)
-                
-                if has_positions:
-                    output.append("---")
-                time.sleep(3)  # Delay between owners
-            except Exception as e:
-                output.append(f"Error for {short_name} on {chain_name}: {e}")
-    
-    # Send message (same)
-    # ...
+# Конфиг сетей
+chains = {
+    'arbitrum': {
+        'rpc': 'https://arb1.arbitrum.io/rpc',
+        'factory': '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+        'position_manager': '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
+        'platform': 'arbitrum-one',
+        'version': 'v3'
+    },
+    'bnb': {
+        'rpc': 'https://bsc-dataseed.binance.org/',
+        'pool_manager': '0x28e2ea090877bf75740558f6bfb36a5ffee9e9df',
+        'position_manager': '0x7a4a5c919ae2541aed11041a1aeee68f1287f95b',
+        'platform': 'binance-smart-chain',
+        'version': 'v4'
+    }
+}
 
-if __name__ == "__main__":
-    monitor_positions()
+addresses = [
+    '0x17e6D71D30d260e30BB7721C63539694aB02b036',
+    '0x91dad140AF2800B2D660e530B9F42500Eee474a0',
+    '0x4e7240952C21C811d9e1237a328b927685A21418',
+    '0x3c2c34B9bB0b00145142FFeE68475E1AC01C92bA',
+    '0x5A51f62D86F5CCB8C7470Cea2AC982762049c53c'
+]
+
+short_names = {
+    '0x17e6d71d30d260e30bb7721c63539694ab02b036': '1F_MMW',
+    '0x91dad140af2800b2d660e530b9f42500eee474a0': '2F_MMS',
+    '0x4e7240952c21c811d9e1237a328b927685a21418': '3F_BNB',
+    '0x3c2c34b9bb0b00145142ffee68475e1ac01c92ba': '4F_Exodus',
+    '0x5a51f62d86f5ccb8c747
