@@ -374,24 +374,27 @@ def monitor_positions():
                     sym0 = token0_contract.functions.symbol().call()
                     sym1 = token1_contract.functions.symbol().call()
                     
-                    amount0 /= 10 ** dec0
-                    amount1 /= 10 ** dec1
+                    amount0 = abs(amount0) / 10 ** dec0  # abs для фикса
+                    amount1 = abs(amount1) / 10 ** dec1
                     owed0 = tokens_owed0 / 10 ** dec0
                     owed1 = tokens_owed1 / 10 ** dec1
                     
-                    # Расчет accrued fees
+                    # Расчет accrued fees с max(0, ...)
                     fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
                     fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
                     fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    accrued0 = liquidity * (fee_growth_inside0 - fee_growth_inside0_last) // (1 << 128) / 10 ** dec0
-                    accrued1 = liquidity * (fee_growth_inside1 - fee_growth_inside1_last) // (1 << 128) / 10 ** dec1
+                    delta_fee0 = fee_growth_inside0 - fee_growth_inside0_last
+                    delta_fee1 = fee_growth_inside1 - fee_growth_inside1_last
                     
-                    uncollected0 = owed0 + accrued0
-                    uncollected1 = owed1 + accrued1
+                    accrued0 = max(0, liquidity * delta_fee0 // (1 << 128)) / 10 ** dec0
+                    accrued1 = max(0, liquidity * delta_fee1 // (1 << 128)) / 10 ** dec1
                     
-                    price0 = get_token_price(config['platform'], token0)
-                    price1 = get_token_price(config['platform'], token1)
+                    uncollected0 = max(0, owed0 + accrued0)
+                    uncollected1 = max(0, owed1 + accrued1)
+                    
+                    price0 = get_token_price(config['platform'], token0.lower())
+                    price1 = get_token_price(config['platform'], token1.lower())
                     
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
