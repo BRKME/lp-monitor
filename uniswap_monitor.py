@@ -2,10 +2,10 @@ import json
 from web3 import Web3
 import requests
 from datetime import datetime
-import time  # Добавлен для задержек
+import time  # Для задержек
 
-# Минимальные ABI
-FACTORY_ABI = [
+# Минимальные ABI для V3 (Arbitrum)
+FACTORY_ABI_V3 = [  # ... (твой оригинальный FACTORY_ABI)
     {
         "inputs": [
             {"internalType": "address", "name": "tokenA", "type": "address"},
@@ -19,46 +19,55 @@ FACTORY_ABI = [
     }
 ]
 
-POOL_ABI = [
+POOL_ABI_V3 = [  # ... (твой оригинальный POOL_ABI)
+    # slot0, liquidity, feeGrowthGlobal0X128, feeGrowthGlobal1X128, ticks
+]
+
+POSITION_MANAGER_ABI_V3 = [  # ... (твой оригинальный POSITION_MANAGER_ABI)
+    # balanceOf, tokenOfOwnerByIndex, positions (V3 format)
+]
+
+# ABI для V4 PoolManager (BNB)
+POOL_MANAGER_ABI_V4 = [
     {
-        "inputs": [],
-        "name": "slot0",
+        "inputs": [{"internalType": "bytes32", "name": "poolId", "type": "bytes32"}],
+        "name": "getSlot0",
         "outputs": [
             {"internalType": "uint160", "name": "sqrtPriceX96", "type": "uint160"},
             {"internalType": "int24", "name": "tick", "type": "int24"},
-            {"internalType": "uint16", "name": "observationIndex", "type": "uint16"},
-            {"internalType": "uint16", "name": "observationCardinality", "type": "uint16"},
-            {"internalType": "uint16", "name": "observationCardinalityNext", "type": "uint16"},
-            {"internalType": "uint8", "name": "feeProtocol", "type": "uint8"},
-            {"internalType": "bool", "name": "unlocked", "type": "bool"}
+            {"internalType": "uint8", "name": "protocolFee", "type": "uint8"},
+            {"internalType": "uint8", "name": "lpFee", "type": "uint8"}
         ],
         "stateMutability": "view",
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "liquidity",
+        "inputs": [{"internalType": "bytes32", "name": "poolId", "type": "bytes32"}],
+        "name": "getLiquidity",
         "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}],
         "stateMutability": "view",
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "feeGrowthGlobal0X128",
+        "inputs": [{"internalType": "bytes32", "name": "poolId", "type": "bytes32"}],
+        "name": "getFeeGrowthGlobal0X128",
         "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
         "stateMutability": "view",
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "feeGrowthGlobal1X128",
+        "inputs": [{"internalType": "bytes32", "name": "poolId", "type": "bytes32"}],
+        "name": "getFeeGrowthGlobal1X128",
         "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
         "stateMutability": "view",
         "type": "function"
     },
     {
-        "inputs": [{"internalType": "int24", "name": "tick", "type": "int24"}],
-        "name": "ticks",
+        "inputs": [
+            {"internalType": "bytes32", "name": "poolId", "type": "bytes32"},
+            {"internalType": "int24", "name": "tick", "type": "int24"}
+        ],
+        "name": "getTickInfo",
         "outputs": [
             {"internalType": "uint128", "name": "liquidityGross", "type": "uint128"},
             {"internalType": "int128", "name": "liquidityNet", "type": "int128"},
@@ -74,33 +83,22 @@ POOL_ABI = [
     }
 ]
 
-POSITION_MANAGER_ABI = [
-    {
-        "inputs": [{"internalType": "address", "name": "owner", "type": "address"}],
-        "name": "balanceOf",
-        "outputs": [{"internalType": "uint256", "name": "balance", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {"internalType": "address", "name": "owner", "type": "address"},
-            {"internalType": "uint256", "name": "index", "type": "uint256"}
-        ],
-        "name": "tokenOfOwnerByIndex",
-        "outputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
+# V4 PositionManager ABI (positions returns PoolKey struct)
+POSITION_MANAGER_ABI_V4 = [
+    # ... (V3-like, but positions includes PoolKey)
     {
         "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
         "name": "positions",
         "outputs": [
             {"internalType": "uint96", "name": "nonce", "type": "uint96"},
             {"internalType": "address", "name": "operator", "type": "address"},
-            {"internalType": "address", "name": "token0", "type": "address"},
-            {"internalType": "address", "name": "token1", "type": "address"},
-            {"internalType": "uint24", "name": "fee", "type": "uint24"},
+            {"components": [
+                {"internalType": "address", "name": "currency0", "type": "address"},
+                {"internalType": "address", "name": "currency1", "type": "address"},
+                {"internalType": "uint24", "name": "fee", "type": "uint24"},
+                {"internalType": "int24", "name": "tickSpacing", "type": "int24"},
+                {"internalType": "address", "name": "hooks", "type": "address"}
+            ], "internalType": "struct PoolKey", "name": "poolKey", "type": "tuple"},
             {"internalType": "int24", "name": "tickLower", "type": "int24"},
             {"internalType": "int24", "name": "tickUpper", "type": "int24"},
             {"internalType": "uint128", "name": "liquidity", "type": "uint128"},
@@ -111,216 +109,90 @@ POSITION_MANAGER_ABI = [
         ],
         "stateMutability": "view",
         "type": "function"
-    }
-]
-
-ERC20_ABI = [
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "decimals",
-        "outputs": [{"name": "", "type": "uint8"}],
-        "type": "function"
     },
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "symbol",
-        "outputs": [{"name": "", "type": "string"}],
-        "type": "function"
-    }
+    # balanceOf and tokenOfOwnerByIndex same as V3
+    # ... (добавь из POSITION_MANAGER_ABI_V3)
 ]
 
-# Функции для TickMath (порт из Solidity)
-def get_sqrt_ratio_at_tick(tick):
-    MAX_TICK = 887272
-    abs_tick = abs(tick)
-    if abs_tick > MAX_TICK:
-        raise ValueError("Tick out of range")
-    ratio = 0xfffcb933bd6fad37aa2d162d1a594001 if (abs_tick & 0x1) != 0 else 0x100000000000000000000000000000000
-    if (abs_tick & 0x2) != 0:
-        ratio = (ratio * 0xfff97272373d413259a46990580e213a) >> 128
-    if (abs_tick & 0x4) != 0:
-        ratio = (ratio * 0xfff2e50f5f656932ef12357cf3c7fdcc) >> 128
-    if (abs_tick & 0x8) != 0:
-        ratio = (ratio * 0xffe5caca7e10e4e61c3624eaa0941cd0) >> 128
-    if (abs_tick & 0x10) != 0:
-        ratio = (ratio * 0xffcb9843d60f6159c9db58835c926644) >> 128
-    if (abs_tick & 0x20) != 0:
-        ratio = (ratio * 0xff973b41fa98c081472e6896dfb254c0) >> 128
-    if (abs_tick & 0x40) != 0:
-        ratio = (ratio * 0xff2ea16466c96a3843ec78b326b52861) >> 128
-    if (abs_tick & 0x80) != 0:
-        ratio = (ratio * 0xfe5dee046a99a2a811c461f1969c3053) >> 128
-    if (abs_tick & 0x100) != 0:
-        ratio = (ratio * 0xfcbe86c7900a88aedcffc83b479aa3a4) >> 128
-    if (abs_tick & 0x200) != 0:
-        ratio = (ratio * 0xf987a7253ac413176f2b074cf7815e54) >> 128
-    if (abs_tick & 0x400) != 0:
-        ratio = (ratio * 0xf3392b0822b70005940c7a398e4b70f3) >> 128
-    if (abs_tick & 0x800) != 0:
-        ratio = (ratio * 0xe7159475a2c29b7443b29c7fa6e889d9) >> 128
-    if (abs_tick & 0x1000) != 0:
-        ratio = (ratio * 0xd097f3bdfd2022b8845ad8f792aa5825) >> 128
-    if (abs_tick & 0x2000) != 0:
-        ratio = (ratio * 0xa9f746462d870fdf8a65dc1f90e061e5) >> 128
-    if (abs_tick & 0x4000) != 0:
-        ratio = (ratio * 0x70d869a156d2a1b890bb3df62baf32f7) >> 128
-    if (abs_tick & 0x8000) != 0:
-        ratio = (ratio * 0x31be135f97d08fd981231505542fcfa6) >> 128
-    if (abs_tick & 0x10000) != 0:
-        ratio = (ratio * 0x9aa508b5b7a84e1c677de54f3e99bc9) >> 128
-    if (abs_tick & 0x20000) != 0:
-        ratio = (ratio * 0x5d6af8dedb81196699c329225ee604) >> 128
-    if (abs_tick & 0x40000) != 0:
-        ratio = (ratio * 0x2216e584f5fa1ea926041bedfe98) >> 128
-    if (abs_tick & 0x80000) != 0:
-        ratio = (ratio * 0x48a170391f7dc42444e8fa2) >> 128
+ERC20_ABI = [  # ... (твой оригинальный)
+]
 
-    if tick > 0:
-        ratio = ((1 << 256) - 1) // ratio
+# ... (TickMath and LiquidityAmounts functions remain the same)
 
-    # Округление вверх если нужно
-    sqrt_price_x96 = (ratio >> 32) + (0 if ratio % (1 << 32) == 0 else 1)
-    return sqrt_price_x96
-
-# Функции для LiquidityAmounts (порт из Solidity, integer math)
-def get_amount0_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
-    if sqrt_ratio_a > sqrt_ratio_b:
-        sqrt_ratio_a, sqrt_ratio_b = sqrt_ratio_b, sqrt_ratio_a
-    return (((liquidity << 96) * (sqrt_ratio_b - sqrt_ratio_a)) // sqrt_ratio_b) // sqrt_ratio_a
-
-def get_amount1_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
-    if sqrt_ratio_a > sqrt_ratio_b:
-        sqrt_ratio_a, sqrt_ratio_b = sqrt_ratio_b, sqrt_ratio_a
-    return liquidity * (sqrt_ratio_b - sqrt_ratio_a) // (1 << 96)
-
-def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
-    if sqrt_a > sqrt_b:
-        sqrt_a, sqrt_b = sqrt_b, sqrt_a
-
-    if sqrt_ratio <= sqrt_a:
-        return get_amount0_for_liquidity(sqrt_a, sqrt_b, liquidity), 0
-    elif sqrt_ratio < sqrt_b:
-        amount0 = get_amount0_for_liquidity(sqrt_ratio, sqrt_b, liquidity)
-        amount1 = get_amount1_for_liquidity(sqrt_a, sqrt_ratio, liquidity)
-        return amount0, amount1
-    else:
-        return 0, get_amount1_for_liquidity(sqrt_a, sqrt_b, liquidity)
-
-# Функция для расчета feeGrowthInside
-def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
-    # Fee growth below
-    if current_tick >= tick_lower:
-        fee_growth_below0 = pool_contract.functions.ticks(tick_lower).call()[2]
-        fee_growth_below1 = pool_contract.functions.ticks(tick_lower).call()[3]
-    else:
-        fee_growth_below0 = fee_growth_global0 - pool_contract.functions.ticks(tick_lower).call()[2]
-        fee_growth_below1 = fee_growth_global1 - pool_contract.functions.ticks(tick_lower).call()[3]
-
-    # Fee growth above
-    if current_tick < tick_upper:
-        fee_growth_above0 = pool_contract.functions.ticks(tick_upper).call()[2]
-        fee_growth_above1 = pool_contract.functions.ticks(tick_upper).call()[3]
-    else:
-        fee_growth_above0 = fee_growth_global0 - pool_contract.functions.ticks(tick_upper).call()[2]
-        fee_growth_above1 = fee_growth_global1 - pool_contract.functions.ticks(tick_upper).call()[3]
-
-    fee_growth_inside0 = fee_growth_global0 - fee_growth_below0 - fee_growth_above0
-    fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
-
-    return fee_growth_inside0, fee_growth_inside1
-
-# Конфиг сетей (добавлена поддержка v4 для BNB через PancakeSwap v4, но с v3 ABI - если не работает, нужно обновить ABI)
+# Конфиг сетей
 chains = {
     'arbitrum': {
         'rpc': 'https://arb1.arbitrum.io/rpc',
-        'factory': '0x1F98431c8aD98523631AE4a59f267346ea31F984',
-        'position_manager': '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
+        'factory': '0x1F98431c8aD98523631AE4a59f267346ea31F984',  # V3 Factory
+        'position_manager': '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',  # V3 NonfungiblePositionManager
         'platform': 'arbitrum-one',
+        'version': 'v3'
     },
     'bnb': {
         'rpc': 'https://bsc-dataseed.binance.org/',
-        'factory': '0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b',  # CLPoolManager for v4
-        'position_manager': '0x55f4c8abA71A1e923edC303eb4fEfF14608cC226',  # CLPositionManager for v4
+        'pool_manager': '0x46a15B0b27311cEdF172AB29E4F4766fBe7f4364',  # PoolManager for V4 (from search)
+        'position_manager': '0x55f4c8abA71A1e923edC303eb4fEfF14608cC226',  # CLPositionManager
         'platform': 'binance-smart-chain',
+        'version': 'v4'
     }
 }
 
-addresses = [
-    '0x17e6D71D30d260e30BB7721C63539694aB02b036',
-    '0x91dad140AF2800B2D660e530B9F42500Eee474a0',
-    '0x4e7240952C21C811d9e1237a328b927685A21418',
-    '0x3c2c34B9bB0b00145142FFeE68475E1AC01C92bA',
-    '0x5A51f62D86F5CCB8C7470Cea2AC982762049c53c'
-]
+# ... (addresses, short_names, get_token_price, send_to_telegram remain the same)
 
-short_names = {
-    '0x17e6d71d30d260e30bb7721c63539694ab02b036': '1F_MMW',
-    '0x91dad140af2800b2d660e530b9f42500eee474a0': '2F_MMS',
-    '0x4e7240952c21c811d9e1237a328b927685a21418': '3F_BNB',
-    '0x3c2c34b9bb0b00145142ffee68475e1ac01c92ba': '4F_Exodus',
-    '0x5a51f62d86f5ccb8c7470cea2ac982762049c53c': '5F_BNB'
-}
+def encode_pool_key(w3, pool_key):
+    # PoolKey: (currency0, currency1, fee, tickSpacing, hooks)
+    encoded = w3.codec.encode(['address', 'address', 'uint24', 'int24', 'address'], pool_key)
+    return encoded
 
-def get_token_price(platform, token_addr):
-    url = f'https://api.coingecko.com/api/v3/simple/token_price/{platform}?contract_addresses={token_addr}&vs_currencies=usd'
-    try:
-        resp = requests.get(url).json()
-        return resp.get(token_addr.lower(), {}).get('usd', 0)
-    except:
-        return 0
+def get_pool_id(w3, pool_key):
+    encoded = encode_pool_key(w3, pool_key)
+    return w3.keccak(encoded)
 
-# Telegram bot config
-BOT_TOKEN = '8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8'
-CHAT_ID = '350766421'  # Ваш chat_id
-
-def send_to_telegram(message):
-    url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-    payload = {
-        'chat_id': CHAT_ID,
-        'text': message,
-        # Removed parse_mode to avoid parsing errors
-    }
-    try:
-        response = requests.post(url, data=payload)
-        if response.status_code == 200:
-            print("Message sent to Telegram successfully.")
-        else:
-            print(f"Error sending to Telegram: {response.text}")
-    except Exception as e:
-        print(f"Exception sending to Telegram: {e}")
+def get_fee_growth_inside_v4(pool_contract, pool_id, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
+    # Use getTickInfo for below and above
+    time.sleep(1)  # Delay for rate limit
+    tick_info_lower = pool_contract.functions.getTickInfo(pool_id, tick_lower).call()
+    time.sleep(1)
+    tick_info_upper = pool_contract.functions.getTickInfo(pool_id, tick_upper).call()
+    
+    fee_growth_below0 = tick_info_lower[2] if current_tick >= tick_lower else fee_growth_global0 - tick_info_lower[2]
+    fee_growth_below1 = tick_info_lower[3] if current_tick >= tick_lower else fee_growth_global1 - tick_info_lower[3]
+    
+    fee_growth_above0 = tick_info_upper[2] if current_tick < tick_upper else fee_growth_global0 - tick_info_upper[2]
+    fee_growth_above1 = tick_info_upper[3] if current_tick < tick_upper else fee_growth_global1 - tick_info_upper[3]
+    
+    fee_growth_inside0 = fee_growth_global0 - fee_growth_below0 - fee_growth_above0
+    fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
+    
+    return fee_growth_inside0, fee_growth_inside1
 
 def monitor_positions():
     output = []
     
-    # Новый заголовок
-    days_ru = {
-        'Monday': 'понедельник',
-        'Tuesday': 'вторник',
-        'Wednesday': 'среда',
-        'Thursday': 'четверг',
-        'Friday': 'пятница',
-        'Saturday': 'суббота',
-        'Sunday': 'воскресенье'
-    }
-    day_name = days_ru.get(datetime.now().strftime('%A'), 'день')
-    hour = datetime.now().hour
-    time_of_day = "утренний" if hour < 12 else "вечерний"
-    header = f"Привет сегодня {day_name} твой {time_of_day} LP обзор"
-    output.append(header)
+    # Header (same)
+    # ...
     
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
             output.append(f"Error connecting to {chain_name}")
             continue
-        # Используем checksum для адресов
-        pm_address = w3.to_checksum_address(config['position_manager'])
-        factory_address = w3.to_checksum_address(config['factory'])
         
-        pm_contract = w3.eth.contract(address=pm_address, abi=POSITION_MANAGER_ABI)
-        factory_contract = w3.eth.contract(address=factory_address, abi=FACTORY_ABI)
+        if config.get('version') == 'v3':
+            # V3 logic (Arbitrum)
+            pm_address = w3.to_checksum_address(config['position_manager'])
+            factory_address = w3.to_checksum_address(config['factory'])
+            pm_contract = w3.eth.contract(address=pm_address, abi=POSITION_MANAGER_ABI_V3)
+            factory_contract = w3.eth.contract(address=factory_address, abi=FACTORY_ABI_V3)
+            pool_abi = POOL_ABI_V3
+            get_fee_growth_func = get_fee_growth_inside  # V3 func
+        else:  # V4 (BNB)
+            pm_address = w3.to_checksum_address(config['position_manager'])
+            pool_manager_address = w3.to_checksum_address(config['pool_manager'])
+            pm_contract = w3.eth.contract(address=pm_address, abi=POSITION_MANAGER_ABI_V4)
+            pool_contract = w3.eth.contract(address=pool_manager_address, abi=POOL_MANAGER_ABI_V4)
+            pool_abi = POOL_MANAGER_ABI_V4  # Not used directly
+            get_fee_growth_func = get_fee_growth_inside_v4  # V4 func
         
         for owner in addresses:
             short_name = short_names.get(owner.lower(), 'Unknown')
@@ -332,90 +204,67 @@ def monitor_positions():
                     output.append(f"{short_name} on {chain_name.capitalize()}:")
                     has_positions = True
                 for i in range(num_pos):
-                    time.sleep(0.5)  # Задержка между позициями
+                    time.sleep(1)  # Delay per position
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
                     pos = pm_contract.functions.positions(token_id).call()
-                    liquidity = pos[7]
+                    liquidity = pos[6] if config.get('version') == 'v4' else pos[7]  # Adjust index for V4 (poolKey shifts)
                     if liquidity == 0:
                         continue
-                    token0 = pos[2]
-                    token1 = pos[3]
-                    fee = pos[4]
-                    tick_lower = pos[5]
-                    tick_upper = pos[6]
-                    fee_growth_inside0_last = pos[8]
-                    fee_growth_inside1_last = pos[9]
-                    tokens_owed0 = pos[10]
-                    tokens_owed1 = pos[11]
                     
-                    token0_checksum = w3.to_checksum_address(token0)
-                    token1_checksum = w3.to_checksum_address(token1)
+                    if config.get('version') == 'v3':
+                        # V3 logic (same as before)
+                        token0 = pos[2]
+                        token1 = pos[3]
+                        fee = pos[4]
+                        tick_lower = pos[5]
+                        tick_upper = pos[6]
+                        # ... (rest V3)
+                        pool_addr = factory_contract.functions.getPool(token0_checksum, token1_checksum, fee).call()
+                        if pool_addr == '0x0000000000000000000000000000000000000000':
+                            continue
+                        pool_contract_local = w3.eth.contract(address=w3.to_checksum_address(pool_addr), abi=POOL_ABI_V3)
+                        slot0 = pool_contract_local.functions.slot0().call()
+                        # ... (amounts, fees, etc.)
+                    else:  # V4 logic
+                        pool_key = pos[2]  # PoolKey tuple: (currency0, currency1, fee, tickSpacing, hooks)
+                        token0, token1, fee, tick_spacing, hooks = pool_key
+                        token0_checksum = w3.to_checksum_address(token0)
+                        token1_checksum = w3.to_checksum_address(token1)
+                        tick_lower = pos[3]
+                        tick_upper = pos[4]
+                        fee_growth_inside0_last = pos[6]
+                        fee_growth_inside1_last = pos[7]
+                        tokens_owed0 = pos[8]
+                        tokens_owed1 = pos[9]
+                        
+                        pool_id = get_pool_id(w3, pool_key)
+                        time.sleep(1)
+                        slot0 = pool_contract.functions.getSlot0(pool_id).call()
+                        sqrt_price_x96 = slot0[0]
+                        current_tick = slot0[1]
+                        
+                        # ... (in_range, amounts same)
+                        
+                        # Fees
+                        time.sleep(1)
+                        fee_growth_global0 = pool_contract.functions.getFeeGrowthGlobal0X128(pool_id).call()
+                        time.sleep(1)
+                        fee_growth_global1 = pool_contract.functions.getFeeGrowthGlobal1X128(pool_id).call()
+                        fee_growth_inside0, fee_growth_inside1 = get_fee_growth_func(pool_contract, pool_id, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
+                        
+                        # ... (accrued, uncollected same)
                     
-                    pool_addr = factory_contract.functions.getPool(token0_checksum, token1_checksum, fee).call()
-                    if pool_addr == '0x0000000000000000000000000000000000000000':
-                        continue
-                    
-                    pool_addr_checksum = w3.to_checksum_address(pool_addr)
-                    pool_contract = w3.eth.contract(address=pool_addr_checksum, abi=POOL_ABI)
-                    slot0 = pool_contract.functions.slot0().call()
-                    sqrt_price_x96 = slot0[0]
-                    current_tick = slot0[1]
-                    
-                    in_range = tick_lower <= current_tick < tick_upper
-                    emoji = '🟢' if in_range else '🔴'
-                    
-                    sqrt_lower = get_sqrt_ratio_at_tick(tick_lower)
-                    sqrt_upper = get_sqrt_ratio_at_tick(tick_upper)
-                    
-                    amount0, amount1 = get_amounts_for_liquidity(sqrt_price_x96, sqrt_lower, sqrt_upper, liquidity)
-                    
-                    token0_contract = w3.eth.contract(token0_checksum, abi=ERC20_ABI)
-                    token1_contract = w3.eth.contract(token1_checksum, abi=ERC20_ABI)
-                    dec0 = token0_contract.functions.decimals().call()
-                    dec1 = token1_contract.functions.decimals().call()
-                    sym0 = token0_contract.functions.symbol().call()
-                    sym1 = token1_contract.functions.symbol().call()
-                    
-                    amount0 = abs(amount0) / 10 ** dec0  # abs для фикса
-                    amount1 = abs(amount1) / 10 ** dec1
-                    owed0 = tokens_owed0 / 10 ** dec0
-                    owed1 = tokens_owed1 / 10 ** dec1
-                    
-                    # Расчет accrued fees с max(0, ...)
-                    fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
-                    fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
-                    fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
-                    
-                    delta_fee0 = fee_growth_inside0 - fee_growth_inside0_last
-                    delta_fee1 = fee_growth_inside1 - fee_growth_inside1_last
-                    
-                    accrued0 = max(0, liquidity * delta_fee0 // (1 << 128)) / 10 ** dec0
-                    accrued1 = max(0, liquidity * delta_fee1 // (1 << 128)) / 10 ** dec1
-                    
-                    uncollected0 = max(0, owed0 + accrued0)
-                    uncollected1 = max(0, owed1 + accrued1)
-                    
-                    price0 = get_token_price(config['platform'], token0.lower())
-                    price1 = get_token_price(config['platform'], token1.lower())
-                    
-                    balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
-                    uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
-                    
-                    output.append(f"  Position: {sym0}-{sym1}, (fee {fee/10000}%): {emoji}")
-                    output.append(f"  Balance USD: ${balance_usd:.0f}")
-                    output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
+                    # Common output
+                    # ... (sym0, sym1, balance_usd, etc.)
+                
                 if has_positions:
                     output.append("---")
-                time.sleep(2)  # Задержка между адресами для избежания rate limit
+                time.sleep(3)  # Delay between owners
             except Exception as e:
                 output.append(f"Error for {short_name} on {chain_name}: {e}")
     
-    # Отправка в Telegram
-    message_text = "\n".join(output)
-    send_to_telegram(message_text)
-    
-    # Для отладки также выводим в консоль
-    print(message_text)
+    # Send message (same)
+    # ...
 
 if __name__ == "__main__":
     monitor_positions()
