@@ -262,7 +262,4 @@ def get_sqrt_ratio_at_tick(tick):
         ratio = (ratio * 0xe7159475a2c29b7443b29c7fa6e889d9) >> 128
     if (abs_tick & 0x1000) != 0:
         ratio = (ratio * 0xd097f3bdfd2022b8845ad8f792aa5825) >> 128
-    if (abs_tick & 0x2000) != 0:
-        ratio = (ratio * 0xa9f746462d870fdf8a65dc1f90e061e5) >> 128
-    if (abs_tick & 0x4000) != 0:
-        ratio = (ratio
+    if (abs_tick & 0x2000) !=
