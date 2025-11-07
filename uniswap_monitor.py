@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 import time
 
-# === V3 ABI (без изменений) ===
+# === V3 ABI ===
 FACTORY_ABI = [
     {
         "inputs": [
@@ -114,13 +114,10 @@ POSITION_MANAGER_ABI = [
     }
 ]
 
-# === V4 ABI для PancakeSwap V4 на BNB ===
-# V4 использует PoolManager + CLPositionManager
+# === V4 ABI (PancakeSwap V4) ===
 POOL_MANAGER_V4_ABI = [
     {
-        "inputs": [
-            {"internalType": "bytes32", "name": "poolId", "type": "bytes32"}
-        ],
+        "inputs": [{"internalType": "bytes32", "name": "poolId", "type": "bytes32"}],
         "name": "getSlot0",
         "outputs": [
             {"internalType": "uint160", "name": "sqrtPriceX96", "type": "uint160"},
@@ -128,15 +125,6 @@ POOL_MANAGER_V4_ABI = [
             {"internalType": "uint24", "name": "protocolFee", "type": "uint24"},
             {"internalType": "uint24", "name": "lpFee", "type": "uint24"}
         ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {"internalType": "bytes32", "name": "poolId", "type": "bytes32"}
-        ],
-        "name": "getLiquidity",
-        "outputs": [{"internalType": "uint128", "name": "liquidity", "type": "uint128"}],
         "stateMutability": "view",
         "type": "function"
     }
@@ -178,23 +166,11 @@ CL_POSITION_MANAGER_V4_ABI = [
 ]
 
 ERC20_ABI = [
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "decimals",
-        "outputs": [{"name": "", "type": "uint8"}],
-        "type": "function"
-    },
-    {
-        "constant": True,
-        "inputs": [],
-        "name": "symbol",
-        "outputs": [{"name": "", "type": "string"}],
-        "type": "function"
-    }
+    {"constant": True, "inputs": [], "name": "decimals", "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
+    {"constant": True, "inputs": [], "name": "symbol", "outputs": [{"name": "", "type": "string"}], "type": "function"}
 ]
 
-# === TickMath functions (без изменений) ===
+# === TickMath functions ===
 def get_sqrt_ratio_at_tick(tick):
     MAX_TICK = 887272
     abs_tick = abs(tick)
@@ -239,10 +215,8 @@ def get_sqrt_ratio_at_tick(tick):
         ratio = (ratio * 0x2216e584f5fa1ea926041bedfe98) >> 128
     if (abs_tick & 0x80000) != 0:
         ratio = (ratio * 0x48a170391f7dc42444e8fa2) >> 128
-
     if tick > 0:
         ratio = ((1 << 256) - 1) // ratio
-
     sqrt_price_x96 = (ratio >> 32) + (0 if ratio % (1 << 32) == 0 else 1)
     return sqrt_price_x96
 
@@ -259,7 +233,6 @@ def get_amount1_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
 def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
     if sqrt_a > sqrt_b:
         sqrt_a, sqrt_b = sqrt_b, sqrt_a
-
     if sqrt_ratio <= sqrt_a:
         return get_amount0_for_liquidity(sqrt_a, sqrt_b, liquidity), 0
     elif sqrt_ratio < sqrt_b:
@@ -276,20 +249,17 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
     else:
         fee_growth_below0 = fee_growth_global0 - pool_contract.functions.ticks(tick_lower).call()[2]
         fee_growth_below1 = fee_growth_global1 - pool_contract.functions.ticks(tick_lower).call()[3]
-
     if current_tick < tick_upper:
         fee_growth_above0 = pool_contract.functions.ticks(tick_upper).call()[2]
         fee_growth_above1 = pool_contract.functions.ticks(tick_upper).call()[3]
     else:
         fee_growth_above0 = fee_growth_global0 - pool_contract.functions.ticks(tick_upper).call()[2]
         fee_growth_above1 = fee_growth_global1 - pool_contract.functions.ticks(tick_upper).call()[3]
-
     fee_growth_inside0 = fee_growth_global0 - fee_growth_below0 - fee_growth_above0
     fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
-
     return fee_growth_inside0, fee_growth_inside1
 
-# === Конфиг сетей ===
+# === Config ===
 chains = {
     'arbitrum': {
         'rpc': 'https://arb1.arbitrum.io/rpc',
@@ -300,15 +270,15 @@ chains = {
     },
     'bnb_v3': {
         'rpc': 'https://bsc-dataseed.binance.org/',
-        'factory': '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865',  # PancakeSwap V3 Factory
-        'position_manager': '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364',  # V3 Position Manager
+        'factory': '0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865',
+        'position_manager': '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364',
         'platform': 'binance-smart-chain',
         'version': 'v3'
     },
     'bnb_v4': {
         'rpc': 'https://bsc-dataseed.binance.org/',
-        'pool_manager': '0x969D90aC74A1a5228b66440f8C8326a8dA47A5F9',  # PoolManager V4
-        'position_manager': '0xF78031CBCA409F2FB6876BDFDBc1b2df24cF9bEf',  # CLPositionManager V4
+        'pool_manager': '0x969D90aC74A1a5228b66440f8C8326a8dA47A5F9',
+        'position_manager': '0xF78031CBCA409F2FB6876BDFDBc1b2df24cF9bEf',
         'platform': 'binance-smart-chain',
         'version': 'v4'
     }
@@ -330,6 +300,9 @@ short_names = {
     '0x5a51f62d86f5ccb8c7470cea2ac982762049c53c': '5F_BNB'
 }
 
+BOT_TOKEN = '8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8'
+CHAT_ID = '350766421'
+
 def get_token_price(platform, token_addr):
     url = f'https://api.coingecko.com/api/v3/simple/token_price/{platform}?contract_addresses={token_addr}&vs_currencies=usd'
     try:
@@ -338,181 +311,125 @@ def get_token_price(platform, token_addr):
     except:
         return 0
 
-# Telegram config
-BOT_TOKEN = '8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8'
-CHAT_ID = '350766421'
-
 def send_to_telegram(message):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-    payload = {
-        'chat_id': CHAT_ID,
-        'text': message,
-    }
+    payload = {'chat_id': CHAT_ID, 'text': message}
     try:
         response = requests.post(url, data=payload, timeout=10)
         if response.status_code == 200:
-            print("✅ Сообщение отправлено в Telegram")
+            print("✅ Telegram OK")
         else:
-            print(f"❌ Ошибка Telegram: {response.text}")
+            print(f"❌ Telegram error: {response.text}")
     except Exception as e:
-        print(f"❌ Исключение Telegram: {e}")
+        print(f"❌ Exception: {e}")
 
 def process_v3_positions(w3, config, owner, short_name, output):
-    """Обработка V3 позиций"""
     try:
         pm_address = w3.to_checksum_address(config['position_manager'])
         factory_address = w3.to_checksum_address(config['factory'])
-        
         pm_contract = w3.eth.contract(address=pm_address, abi=POSITION_MANAGER_ABI)
         factory_contract = w3.eth.contract(address=factory_address, abi=FACTORY_ABI)
-        
         owner_checksum = w3.to_checksum_address(owner)
         num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
-        
         if num_pos == 0:
             return False
-        
         has_positions = False
         for i in range(num_pos):
             time.sleep(0.5)
             token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
             pos = pm_contract.functions.positions(token_id).call()
             liquidity = pos[7]
-            
             if liquidity == 0:
                 continue
-                
             has_positions = True
             token0, token1, fee = pos[2], pos[3], pos[4]
             tick_lower, tick_upper = pos[5], pos[6]
-            
             token0_checksum = w3.to_checksum_address(token0)
             token1_checksum = w3.to_checksum_address(token1)
-            
             pool_addr = factory_contract.functions.getPool(token0_checksum, token1_checksum, fee).call()
             if pool_addr == '0x0000000000000000000000000000000000000000':
                 continue
-            
             pool_contract = w3.eth.contract(address=w3.to_checksum_address(pool_addr), abi=POOL_ABI)
             slot0 = pool_contract.functions.slot0().call()
             current_tick = slot0[1]
-            
             in_range = tick_lower <= current_tick < tick_upper
             emoji = '🟢' if in_range else '🔴'
-            
             sqrt_price_x96 = slot0[0]
             sqrt_lower = get_sqrt_ratio_at_tick(tick_lower)
             sqrt_upper = get_sqrt_ratio_at_tick(tick_upper)
-            
             amount0, amount1 = get_amounts_for_liquidity(sqrt_price_x96, sqrt_lower, sqrt_upper, liquidity)
-            
             token0_contract = w3.eth.contract(token0_checksum, abi=ERC20_ABI)
             token1_contract = w3.eth.contract(token1_checksum, abi=ERC20_ABI)
             dec0 = token0_contract.functions.decimals().call()
             dec1 = token1_contract.functions.decimals().call()
             sym0 = token0_contract.functions.symbol().call()
             sym1 = token1_contract.functions.symbol().call()
-            
             amount0 = abs(amount0) / 10 ** dec0
             amount1 = abs(amount1) / 10 ** dec1
-            
-            # Расчет uncollected fees (упрощенная версия)
             tokens_owed0 = pos[10] / 10 ** dec0
             tokens_owed1 = pos[11] / 10 ** dec1
-            
             price0 = get_token_price(config['platform'], token0.lower())
             price1 = get_token_price(config['platform'], token1.lower())
-            
             balance_usd = amount0 * price0 + amount1 * price1
             fees_usd = tokens_owed0 * price0 + tokens_owed1 * price1
-            
             output.append(f"  Position: {sym0}-{sym1} (fee {fee/10000}%): {emoji}")
             output.append(f"  Balance USD: ${balance_usd:.0f}")
             output.append(f"  My Salary: ${fees_usd:.0f}")
-        
         return has_positions
     except Exception as e:
-        output.append(f"  ❌ Ошибка V3: {e}")
+        output.append(f"  ❌ V3 Error: {e}")
         return False
 
 def process_v4_positions(w3, config, owner, short_name, output):
-    """Обработка V4 позиций (PancakeSwap V4)"""
     try:
         pm_address = w3.to_checksum_address(config['position_manager'])
         pool_manager_address = w3.to_checksum_address(config['pool_manager'])
-        
         pm_contract = w3.eth.contract(address=pm_address, abi=CL_POSITION_MANAGER_V4_ABI)
         pool_manager_contract = w3.eth.contract(address=pool_manager_address, abi=POOL_MANAGER_V4_ABI)
-        
         owner_checksum = w3.to_checksum_address(owner)
         num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
-        
         if num_pos == 0:
             return False
-        
         has_positions = False
         for i in range(num_pos):
             time.sleep(0.5)
             token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
             pos = pm_contract.functions.positions(token_id).call()
-            
-            # V4 structure: poolId, currency0, currency1, fee, tickLower, tickUpper, liquidity
             pool_id, currency0, currency1, fee, tick_lower, tick_upper, liquidity = pos
-            
             if liquidity == 0:
                 continue
-            
             has_positions = True
-            
-            # Получаем данные пула через PoolManager
             slot0 = pool_manager_contract.functions.getSlot0(pool_id).call()
             sqrt_price_x96, current_tick = slot0[0], slot0[1]
-            
             in_range = tick_lower <= current_tick < tick_upper
             emoji = '🟢' if in_range else '🔴'
-            
             sqrt_lower = get_sqrt_ratio_at_tick(tick_lower)
             sqrt_upper = get_sqrt_ratio_at_tick(tick_upper)
-            
             amount0, amount1 = get_amounts_for_liquidity(sqrt_price_x96, sqrt_lower, sqrt_upper, liquidity)
-            
             currency0_checksum = w3.to_checksum_address(currency0)
             currency1_checksum = w3.to_checksum_address(currency1)
-            
             token0_contract = w3.eth.contract(currency0_checksum, abi=ERC20_ABI)
             token1_contract = w3.eth.contract(currency1_checksum, abi=ERC20_ABI)
             dec0 = token0_contract.functions.decimals().call()
             dec1 = token1_contract.functions.decimals().call()
             sym0 = token0_contract.functions.symbol().call()
             sym1 = token1_contract.functions.symbol().call()
-            
             amount0 = abs(amount0) / 10 ** dec0
             amount1 = abs(amount1) / 10 ** dec1
-            
             price0 = get_token_price(config['platform'], currency0.lower())
             price1 = get_token_price(config['platform'], currency1.lower())
-            
             balance_usd = amount0 * price0 + amount1 * price1
-            
             output.append(f"  Position V4: {sym0}-{sym1} (fee {fee/10000}%): {emoji}")
             output.append(f"  Balance USD: ${balance_usd:.0f}")
-            output.append(f"  My Salary: $0 (V4 fees not implemented)")  # V4 fees требуют сложной логики
-        
+            output.append(f"  My Salary: (V4 fees TBD)")
         return has_positions
     except Exception as e:
-        output.append(f"  ❌ Ошибка V4: {e}")
-        import traceback
-        traceback.print_exc()
+        output.append(f"  ❌ V4 Error: {e}")
         return False
 
 def monitor_positions():
     output = []
-    
-    # Заголовок
-    days_ru = {
-        'Monday': 'понедельник', 'Tuesday': 'вторник', 'Wednesday': 'среда',
-        'Thursday': 'четверг', 'Friday': 'пятница', 'Saturday': 'суббота', 'Sunday': 'воскресенье'
-    }
+    days_ru = {'Monday': 'понедельник', 'Tuesday': 'вторник', 'Wednesday': 'среда', 'Thursday': 'четверг', 'Friday': 'пятница', 'Saturday': 'суббота', 'Sunday': 'воскресенье'}
     day_name = days_ru.get(datetime.now().strftime('%A'), 'день')
     hour = datetime.now().hour
     time_of_day = "утренний" if hour < 12 else "вечерний"
@@ -520,4 +437,27 @@ def monitor_positions():
     output.append(header)
     
     for chain_name, config in chains.items():
-        w3 = Web3(Web3.HTTPProvider(config['r
+        w3 = Web3(Web3.HTTPProvider(config['rpc']))
+        if not w3.is_connected():
+            output.append(f"❌ Error: {chain_name} not connected")
+            continue
+        
+        for owner in addresses:
+            short_name = short_names.get(owner.lower(), 'Unknown')
+            has_pos = False
+            
+            if config['version'] == 'v3':
+                has_pos = process_v3_positions(w3, config, owner, short_name, output)
+            elif config['version'] == 'v4':
+                has_pos = process_v4_positions(w3, config, owner, short_name, output)
+            
+            if has_pos:
+                output.append("---")
+            time.sleep(1)
+    
+    message = "\n".join(output)
+    send_to_telegram(message)
+    print(message)
+
+if __name__ == "__main__":
+    monitor_positions()
