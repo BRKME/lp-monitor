@@ -283,7 +283,6 @@ def send_to_telegram(message):
     payload = {
         'chat_id': CHAT_ID,
         'text': message,
-        'parse_mode': 'MarkdownV2'
     }
     try:
         response = requests.post(url, data=payload)
@@ -321,9 +320,9 @@ def monitor_positions():
     month_name = months_ru[now.month]
     week_num = get_week_number()
     
-    # Шапка в 3 строки
-    output.append('**#Крипта #LP**')
-    output.append(f'**{day_name} {day_num} {month_name}, неделя {week_num}**')
+    # Шапка в 3 строки (без Markdown, чтобы избежать ошибок парсинга)
+    output.append('#Крипта #LP')
+    output.append(f'{day_name} {day_num} {month_name}, неделя {week_num}')
     output.append('')  # Пустая строка
     
     total_salary = 0.0
@@ -436,7 +435,7 @@ def monitor_positions():
     
     # Итоговая сумма
     output.append('')
-    output.append(f'**Total Salary: ${total_salary:.0f}**')
+    output.append(f'Total Salary: ${total_salary:.0f}')
     
     # Отправка в Telegram
     message_text = "\n".join(output)
