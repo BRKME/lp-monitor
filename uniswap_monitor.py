@@ -323,7 +323,6 @@ def get_week_number():
 
 def monitor_positions():
     output = []
-    debug_output = []
     
     now = datetime.now()
     days_ru = {
@@ -365,23 +364,15 @@ def monitor_positions():
                 owner_checksum = w3.to_checksum_address(owner)
                 num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
                 
-                # Диагностика для 4F_Exodus
-                if short_name == '4F_Exodus':
-                    debug_output.append(f"\n=== DEBUG 4F_Exodus на {chain_name} ===")
-                    debug_output.append(f"Адрес: {owner_checksum}")
-                    debug_output.append(f"Позиций: {num_pos}")
+
                 
+                                    
                 for i in range(num_pos):
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
                     pos = pm_contract.functions.positions(token_id).call()
                     liquidity = pos[7]
                     
-                    if short_name == '4F_Exodus':
-                        print(f"  Token ID {i}: {token_id}, liquidity: {liquidity}")
-                    
                     if liquidity == 0:
-                        if short_name == '4F_Exodus':
-                            print(f"    -> пропущен (liquidity = 0)")
                         continue
                     
                     token0 = pos[2]
@@ -465,24 +456,14 @@ def monitor_positions():
                 
                 if has_data:
                     output.append("---")
-                elif short_name == '4F_Exodus':
-                    debug_output.append(f"ВНИМАНИЕ: 4F_Exodus НЕ НАЙДЕН на {chain_name}!")
                     
             except Exception as e:
                 print(f"Error for {short_name} on {chain_name}: {e}")
-                if short_name == '4F_Exodus':
-                    debug_output.append(f"ERROR 4F_Exodus на {chain_name}: {str(e)}")
     
     output.append('')
     output.append(f'Total Salary: ${total_salary:.0f}')
     
     message_text = "\n".join(output)
-    
-    # Добавляем дебаг в сообщение если есть проблемы с 4F_Exodus
-    if debug_output:
-        debug_text = "\n".join(debug_output)
-        message_text = message_text + "\n\n" + debug_text
-    
     send_to_telegram(message_text)
     print(message_text)
 
