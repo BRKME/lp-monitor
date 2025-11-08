@@ -130,7 +130,6 @@ ERC20_ABI = [
     }
 ]
 
-# Функции для TickMath (порт из Solidity)
 def get_sqrt_ratio_at_tick(tick):
     MAX_TICK = 887272
     abs_tick = abs(tick)
@@ -179,11 +178,9 @@ def get_sqrt_ratio_at_tick(tick):
     if tick > 0:
         ratio = ((1 << 256) - 1) // ratio
 
-    # Соответствует Solidity: просто >> 32 без дополнительного округления
     sqrt_price_x96 = ratio >> 32
     return sqrt_price_x96
 
-# Функции для LiquidityAmounts (порт из Solidity, integer math)
 def get_amount0_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
     if sqrt_ratio_a > sqrt_ratio_b:
         sqrt_ratio_a, sqrt_ratio_b = sqrt_ratio_b, sqrt_ratio_a
@@ -207,13 +204,10 @@ def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
     else:
         return 0, get_amount1_for_liquidity(sqrt_a, sqrt_b, liquidity)
 
-# Функция для расчета feeGrowthInside
 def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
-    # Кэшируем вызовы ticks
     ticks_lower = pool_contract.functions.ticks(tick_lower).call()
     ticks_upper = pool_contract.functions.ticks(tick_upper).call()
 
-    # Fee growth below
     if current_tick >= tick_lower:
         fee_growth_below0 = ticks_lower[2]
         fee_growth_below1 = ticks_lower[3]
@@ -221,7 +215,6 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
         fee_growth_below0 = fee_growth_global0 - ticks_lower[2]
         fee_growth_below1 = fee_growth_global1 - ticks_lower[3]
 
-    # Fee growth above
     if current_tick < tick_upper:
         fee_growth_above0 = ticks_upper[2]
         fee_growth_above1 = ticks_upper[3]
@@ -234,7 +227,22 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
 
     return fee_growth_inside0, fee_growth_inside1
 
-# Конфиг сетей
+def calculate_accrued_fees(liquidity, fee_growth_inside0, fee_growth_inside1, fee_growth_inside0_last, fee_growth_inside1_last, dec0, dec1):
+    # Используем модульную арифметику для правильной работы с большими числами
+    delta0 = (fee_growth_inside0 - fee_growth_inside0_last) & ((1 << 256) - 1)
+    delta1 = (fee_growth_inside1 - fee_growth_inside1_last) & ((1 << 256) - 1)
+    
+    # Проверяем если delta > 2^255, то это отрицательное число
+    if delta0 > (1 << 255):
+        delta0 = delta0 - (1 << 256)
+    if delta1 > (1 << 255):
+        delta1 = delta1 - (1 << 256)
+    
+    accrued0 = abs(liquidity * delta0 // (1 << 128)) / 10 ** dec0
+    accrued1 = abs(liquidity * delta1 // (1 << 128)) / 10 ** dec1
+    
+    return accrued0, accrued1
+
 chains = {
     'arbitrum': {
         'rpc': 'https://arb1.arbitrum.io/rpc',
@@ -274,7 +282,6 @@ def get_token_price(platform, token_addr):
     except:
         return 0
 
-# Telegram bot config
 BOT_TOKEN = '8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8'
 CHAT_ID = '350766421'
 
@@ -299,16 +306,10 @@ def get_week_number():
 def monitor_positions():
     output = []
     
-    # Динамический заголовок с датой и неделей
     now = datetime.now()
     days_ru = {
-        'Monday': 'Понедельник',
-        'Tuesday': 'Вторник',
-        'Wednesday': 'Среда',
-        'Thursday': 'Четверг',
-        'Friday': 'Пятница',
-        'Saturday': 'Суббота',
-        'Sunday': 'Воскресенье'
+        'Monday': 'Понедельник', 'Tuesday': 'Вторник', 'Wednesday': 'Среда', 'Thursday': 'Четверг',
+        'Friday': 'Пятница', 'Saturday': 'Суббота', 'Sunday': 'Воскресенье'
     }
     months_ru = {
         1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля',
@@ -320,10 +321,9 @@ def monitor_positions():
     month_name = months_ru[now.month]
     week_num = get_week_number()
     
-    # Шапка в 3 строки (без Markdown, чтобы избежать ошибок парсинга)
     output.append('#Крипта #LP')
     output.append(f'{day_name} {day_num} {month_name}, неделя {week_num}')
-    output.append('')  # Пустая строка
+    output.append('')
     
     total_salary = 0.0
     
@@ -397,18 +397,19 @@ def monitor_positions():
                     owed0 = tokens_owed0 / 10 ** dec0
                     owed1 = tokens_owed1 / 10 ** dec1
                     
-                    # Расчет accrued fees - СОВМЕЩЕННАЯ ЛОГИКА
                     fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
                     fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
                     fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    # Используем логику из первого кода (работает для 4F_Exodus)
-                    # но без max(0, delta) чтобы не обнулять отрицательные значения
-                    delta0 = fee_growth_inside0 - fee_growth_inside0_last
-                    delta1 = fee_growth_inside1 - fee_growth_inside1_last
-                    
-                    accrued0 = liquidity * delta0 // (1 << 128) / 10 ** dec0
-                    accrued1 = liquidity * delta1 // (1 << 128) / 10 ** dec1
+                    accrued0, accrued1 = calculate_accrued_fees(
+                        liquidity, 
+                        fee_growth_inside0, 
+                        fee_growth_inside1, 
+                        fee_growth_inside0_last, 
+                        fee_growth_inside1_last, 
+                        dec0, 
+                        dec1
+                    )
                     
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
@@ -419,7 +420,6 @@ def monitor_positions():
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
                     
-                    # Убираем проверку на отрицательные значения
                     total_salary += uncollected_fees_usd
                     
                     if not has_data:
@@ -435,15 +435,11 @@ def monitor_positions():
             except Exception as e:
                 print(f"Error for {short_name} on {chain_name}: {e}")
     
-    # Итоговая сумма
     output.append('')
     output.append(f'Total Salary: ${total_salary:.0f}')
     
-    # Отправка в Telegram
     message_text = "\n".join(output)
     send_to_telegram(message_text)
-    
-    # Для отладки также выводим в консоль
     print(message_text)
 
 if __name__ == "__main__":
