@@ -207,7 +207,7 @@ def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
     else:
         return 0, get_amount1_for_liquidity(sqrt_a, sqrt_b, liquidity)
 
-# Функция для расчета feeGrowthInside
+# Функция для расчета feeGrowthInside (исправленная)
 def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
     # Кэшируем вызовы ticks
     ticks_lower = pool_contract.functions.ticks(tick_lower).call()
@@ -215,16 +215,16 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
 
     # Fee growth below
     if current_tick >= tick_lower:
-        fee_growth_below0 = ticks_lower[2]
-        fee_growth_below1 = ticks_lower[3]
+        fee_growth_below0 = ticks_lower[2]  # feeGrowthOutside0X128
+        fee_growth_below1 = ticks_lower[3]  # feeGrowthOutside1X128
     else:
         fee_growth_below0 = fee_growth_global0 - ticks_lower[2]
         fee_growth_below1 = fee_growth_global1 - ticks_lower[3]
 
     # Fee growth above
     if current_tick < tick_upper:
-        fee_growth_above0 = ticks_upper[2]
-        fee_growth_above1 = ticks_upper[3]
+        fee_growth_above0 = ticks_upper[2]  # feeGrowthOutside0X128
+        fee_growth_above1 = ticks_upper[3]  # feeGrowthOutside1X128
     else:
         fee_growth_above0 = fee_growth_global0 - ticks_upper[2]
         fee_growth_above1 = fee_growth_global1 - ticks_upper[3]
@@ -233,6 +233,23 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
     fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
 
     return fee_growth_inside0, fee_growth_inside1
+
+# Функция для расчета accrued fees (исправленная)
+def calculate_accrued_fees(liquidity, fee_growth_inside0, fee_growth_inside1, fee_growth_inside0_last, fee_growth_inside1_last, dec0, dec1):
+    # Используем модульную арифметику для больших чисел (как в Solidity)
+    delta0 = (fee_growth_inside0 - fee_growth_inside0_last) & ((1 << 256) - 1)
+    delta1 = (fee_growth_inside1 - fee_growth_inside1_last) & ((1 << 256) - 1)
+    
+    # Расчет accrued fees
+    accrued0 = 0
+    accrued1 = 0
+    
+    if delta0 > 0:
+        accrued0 = liquidity * delta0 // (1 << 128)
+    if delta1 > 0:
+        accrued1 = liquidity * delta1 // (1 << 128)
+    
+    return accrued0 / 10 ** dec0, accrued1 / 10 ** dec1
 
 # Конфиг сетей
 chains = {
@@ -397,34 +414,46 @@ def monitor_positions():
                     owed0 = tokens_owed0 / 10 ** dec0
                     owed1 = tokens_owed1 / 10 ** dec1
                     
-                    # Расчет accrued fees с max(0, delta) для избежания отрицательных значений
+                    # Расчет accrued fees с исправленной логикой
                     fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
                     fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
                     fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    delta0 = fee_growth_inside0 - fee_growth_inside0_last
-                    accrued0 = liquidity * max(0, delta0) // (1 << 128) / 10 ** dec0
-                    delta1 = fee_growth_inside1 - fee_growth_inside1_last
-                    accrued1 = liquidity * max(0, delta1) // (1 << 128) / 10 ** dec1
-                    
-                    # Debug для 2F_MMS и ZRO-WETH
-                    if short_name == '2F_MMS' and 'ZRO' in sym0 or 'ZRO' in sym1:
-                        print(f"DEBUG 2F_MMS ZRO-WETH: token_id={token_id}, liquidity={liquidity}, tick_lower={tick_lower}, tick_upper={tick_upper}")
-                        print(f"  fee_growth_inside0={fee_growth_inside0}, last0={fee_growth_inside0_last}, delta0={delta0}, accrued0={accrued0}")
-                        print(f"  fee_growth_inside1={fee_growth_inside1}, last1={fee_growth_inside1_last}, delta1={delta1}, accrued1={accrued1}")
-                        print(f"  owed0={owed0}, owed1={owed1}, dec0={dec0}, dec1={dec1}")
+                    # Используем исправленную функцию расчета accrued fees
+                    accrued0, accrued1 = calculate_accrued_fees(
+                        liquidity, 
+                        fee_growth_inside0, 
+                        fee_growth_inside1, 
+                        fee_growth_inside0_last, 
+                        fee_growth_inside1_last, 
+                        dec0, 
+                        dec1
+                    )
                     
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
+                    
+                    # Детальный дебаг для 2F_MMS
+                    if short_name == '2F_MMS' and ('ZRO' in sym0 or 'ZRO' in sym1):
+                        print(f"DEBUG 2F_MMS ZRO-WETH:")
+                        print(f"  token_id={token_id}, liquidity={liquidity}")
+                        print(f"  tick_lower={tick_lower}, current_tick={current_tick}, tick_upper={tick_upper}")
+                        print(f"  in_range={in_range}")
+                        print(f"  fee_growth_global0={fee_growth_global0}, fee_growth_global1={fee_growth_global1}")
+                        print(f"  fee_growth_inside0={fee_growth_inside0}, last0={fee_growth_inside0_last}")
+                        print(f"  fee_growth_inside1={fee_growth_inside1}, last1={fee_growth_inside1_last}")
+                        print(f"  delta0={fee_growth_inside0 - fee_growth_inside0_last}, delta1={fee_growth_inside1 - fee_growth_inside1_last}")
+                        print(f"  accrued0={accrued0}, accrued1={accrued1}")
+                        print(f"  owed0={owed0}, owed1={owed1}")
+                        print(f"  uncollected0={uncollected0}, uncollected1={uncollected1}")
                     
                     price0 = get_token_price(config['platform'], token0)
                     price1 = get_token_price(config['platform'], token1)
                     
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
-                    if uncollected_fees_usd < 0:
-                        uncollected_fees_usd = 0
                     
+                    # Убираем проверку на отрицательные значения - fees могут быть любыми
                     total_salary += uncollected_fees_usd
                     
                     if not has_data:
