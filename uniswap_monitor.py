@@ -347,6 +347,7 @@ def monitor_positions():
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
+            print(f"Не удалось подключиться к {chain_name}")
             continue
         
         pm_address = w3.to_checksum_address(config['position_manager'])
@@ -359,9 +360,17 @@ def monitor_positions():
             short_name = short_names.get(owner.lower(), 'Unknown')
             has_data = False
             
+            # Отладка для 4F_Exodus
+            if short_name == '4F_Exodus':
+                print(f"DEBUG: Обработка 4F_Exodus на {chain_name}")
+            
             try:
                 owner_checksum = w3.to_checksum_address(owner)
                 num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
+                
+                # Отладка для 4F_Exodus
+                if short_name == '4F_Exodus':
+                    print(f"DEBUG: 4F_Exodus имеет {num_pos} позиций на {chain_name}")
                 
                 for i in range(num_pos):
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
@@ -369,6 +378,8 @@ def monitor_positions():
                     liquidity = pos[7]
                     
                     if liquidity == 0:
+                        if short_name == '4F_Exodus':
+                            print(f"DEBUG: Позиция {token_id} имеет liquidity = 0, пропускаем")
                         continue
                     
                     token0 = pos[2]
@@ -386,6 +397,8 @@ def monitor_positions():
                     
                     pool_addr = factory_contract.functions.getPool(token0_checksum, token1_checksum, fee).call()
                     if pool_addr == '0x0000000000000000000000000000000000000000':
+                        if short_name == '4F_Exodus':
+                            print(f"DEBUG: Пул не найден для {token0}-{token1}")
                         continue
                     
                     pool_addr_checksum = w3.to_checksum_address(pool_addr)
@@ -433,18 +446,12 @@ def monitor_positions():
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
                     
-                    # Детальный дебаг для 2F_MMS
-                    if short_name == '2F_MMS' and ('ZRO' in sym0 or 'ZRO' in sym1):
-                        print(f"DEBUG 2F_MMS ZRO-WETH:")
+                    # Детальный дебаг для 4F_Exodus
+                    if short_name == '4F_Exodus':
+                        print(f"DEBUG 4F_Exodus:")
                         print(f"  token_id={token_id}, liquidity={liquidity}")
-                        print(f"  tick_lower={tick_lower}, current_tick={current_tick}, tick_upper={tick_upper}")
-                        print(f"  in_range={in_range}")
-                        print(f"  fee_growth_global0={fee_growth_global0}, fee_growth_global1={fee_growth_global1}")
-                        print(f"  fee_growth_inside0={fee_growth_inside0}, last0={fee_growth_inside0_last}")
-                        print(f"  fee_growth_inside1={fee_growth_inside1}, last1={fee_growth_inside1_last}")
-                        print(f"  delta0={fee_growth_inside0 - fee_growth_inside0_last}, delta1={fee_growth_inside1 - fee_growth_inside1_last}")
-                        print(f"  accrued0={accrued0}, accrued1={accrued1}")
-                        print(f"  owed0={owed0}, owed1={owed1}")
+                        print(f"  pair={sym0}-{sym1}, fee={fee/10000}%")
+                        print(f"  amount0={amount0}, amount1={amount1}")
                         print(f"  uncollected0={uncollected0}, uncollected1={uncollected1}")
                     
                     price0 = get_token_price(config['platform'], token0)
@@ -453,7 +460,6 @@ def monitor_positions():
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
                     
-                    # Убираем проверку на отрицательные значения - fees могут быть любыми
                     total_salary += uncollected_fees_usd
                     
                     if not has_data:
@@ -465,9 +471,15 @@ def monitor_positions():
                 
                 if has_data:
                     output.append("---")
+                elif short_name == '4F_Exodus':
+                    print(f"DEBUG: 4F_Exodus не имеет активных позиций с liquidity > 0")
                     
             except Exception as e:
                 print(f"Error for {short_name} on {chain_name}: {e}")
+                # Детальный дебаг ошибок для 4F_Exodus
+                if short_name == '4F_Exodus':
+                    import traceback
+                    print(f"DEBUG 4F_Exodus error details: {traceback.format_exc()}")
     
     # Итоговая сумма
     output.append('')
