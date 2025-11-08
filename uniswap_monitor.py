@@ -179,8 +179,8 @@ def get_sqrt_ratio_at_tick(tick):
     if tick > 0:
         ratio = ((1 << 256) - 1) // ratio
 
-    # Округление вверх если нужно
-    sqrt_price_x96 = (ratio >> 32) + (0 if ratio % (1 << 32) == 0 else 1)
+    # Соответствует Solidity: просто >> 32 без дополнительного округления
+    sqrt_price_x96 = ratio >> 32
     return sqrt_price_x96
 
 # Функции для LiquidityAmounts (порт из Solidity, integer math)
@@ -209,21 +209,25 @@ def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
 
 # Функция для расчета feeGrowthInside
 def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
+    # Кэшируем вызовы ticks
+    ticks_lower = pool_contract.functions.ticks(tick_lower).call()
+    ticks_upper = pool_contract.functions.ticks(tick_upper).call()
+
     # Fee growth below
     if current_tick >= tick_lower:
-        fee_growth_below0 = pool_contract.functions.ticks(tick_lower).call()[2]
-        fee_growth_below1 = pool_contract.functions.ticks(tick_lower).call()[3]
+        fee_growth_below0 = ticks_lower[2]
+        fee_growth_below1 = ticks_lower[3]
     else:
-        fee_growth_below0 = fee_growth_global0 - pool_contract.functions.ticks(tick_lower).call()[2]
-        fee_growth_below1 = fee_growth_global1 - pool_contract.functions.ticks(tick_lower).call()[3]
+        fee_growth_below0 = fee_growth_global0 - ticks_lower[2]
+        fee_growth_below1 = fee_growth_global1 - ticks_lower[3]
 
     # Fee growth above
     if current_tick < tick_upper:
-        fee_growth_above0 = pool_contract.functions.ticks(tick_upper).call()[2]
-        fee_growth_above1 = pool_contract.functions.ticks(tick_upper).call()[3]
+        fee_growth_above0 = ticks_upper[2]
+        fee_growth_above1 = ticks_upper[3]
     else:
-        fee_growth_above0 = fee_growth_global0 - pool_contract.functions.ticks(tick_upper).call()[2]
-        fee_growth_above1 = fee_growth_global1 - pool_contract.functions.ticks(tick_upper).call()[3]
+        fee_growth_above0 = fee_growth_global0 - ticks_upper[2]
+        fee_growth_above1 = fee_growth_global1 - ticks_upper[3]
 
     fee_growth_inside0 = fee_growth_global0 - fee_growth_below0 - fee_growth_above0
     fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
@@ -279,6 +283,7 @@ def send_to_telegram(message):
     payload = {
         'chat_id': CHAT_ID,
         'text': message,
+        'parse_mode': 'MarkdownV2'
     }
     try:
         response = requests.post(url, data=payload)
@@ -295,7 +300,8 @@ def get_week_number():
 def monitor_positions():
     output = []
     
-    # Новый заголовок с датой и неделей
+    # Динамический заголовок с датой и неделей
+    now = datetime.now()
     days_ru = {
         'Monday': 'Понедельник',
         'Tuesday': 'Вторник',
@@ -305,17 +311,26 @@ def monitor_positions():
         'Saturday': 'Суббота',
         'Sunday': 'Воскресенье'
     }
-    day_name = days_ru.get(datetime.now().strftime('%A'), 'День')
-    day_num = datetime.now().day
-    month_num = datetime.now().month
+    months_ru = {
+        1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля',
+        5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
+        9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'
+    }
+    day_name = days_ru.get(now.strftime('%A'), 'День')
+    day_num = now.day
+    month_name = months_ru[now.month]
     week_num = get_week_number()
-    header = f"#Крипта #LP \"{day_name} {day_num} ноября, неделя {week_num}\""
-    output.append(header)
+    
+    # Шапка в 3 строки
+    output.append('**#Крипта #LP**')
+    output.append(f'**{day_name} {day_num} {month_name}, неделя {week_num}**')
+    output.append('')  # Пустая строка
+    
+    total_salary = 0.0
     
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
-            output.append(f"Error connecting to {chain_name}")
             continue
         
         pm_address = w3.to_checksum_address(config['position_manager'])
@@ -326,7 +341,7 @@ def monitor_positions():
         
         for owner in addresses:
             short_name = short_names.get(owner.lower(), 'Unknown')
-            positions_data = []
+            has_data = False
             
             try:
                 owner_checksum = w3.to_checksum_address(owner)
@@ -383,38 +398,45 @@ def monitor_positions():
                     owed0 = tokens_owed0 / 10 ** dec0
                     owed1 = tokens_owed1 / 10 ** dec1
                     
-                    # Расчет accrued fees
+                    # Расчет accrued fees с max(0, delta) для избежания отрицательных значений
                     fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
                     fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
                     fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    accrued0 = liquidity * (fee_growth_inside0 - fee_growth_inside0_last) // (1 << 128) / 10 ** dec0
-                    accrued1 = liquidity * (fee_growth_inside1 - fee_growth_inside1_last) // (1 << 128) / 10 ** dec1
+                    delta0 = fee_growth_inside0 - fee_growth_inside0_last
+                    accrued0 = liquidity * max(0, delta0) // (1 << 128) / 10 ** dec0
+                    delta1 = fee_growth_inside1 - fee_growth_inside1_last
+                    accrued1 = liquidity * max(0, delta1) // (1 << 128) / 10 ** dec1
                     
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
-                    
-                    # Проверка на отрицательные значения (ошибка расчета)
-                    if uncollected0 < 0 or uncollected1 < 0 or amount0 < 0 or amount1 < 0:
-                        continue
                     
                     price0 = get_token_price(config['platform'], token0)
                     price1 = get_token_price(config['platform'], token1)
                     
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
+                    if uncollected_fees_usd < 0:
+                        uncollected_fees_usd = 0
                     
-                    position_text = f"{emoji} {sym0}-{sym1} ({fee/10000}%): ${balance_usd:.0f} | Зарплата: ${uncollected_fees_usd:.0f}"
-                    positions_data.append(position_text)
+                    total_salary += uncollected_fees_usd
+                    
+                    if not has_data:
+                        output.append(f"{short_name}:")
+                        has_data = True
+                    output.append(f"  {emoji} Position: {sym0}-{sym1}, (fee {fee/10000}%):")
+                    output.append(f"  Balance USD: ${balance_usd:.0f}")
+                    output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
                 
-                # Выводим данные только если есть позиции
-                if positions_data:
-                    output.append(f"{short_name}:")
-                    for pos in positions_data:
-                        output.append(f"  {pos}")
+                if has_data:
+                    output.append("---")
                     
             except Exception as e:
                 print(f"Error for {short_name} on {chain_name}: {e}")
+    
+    # Итоговая сумма
+    output.append('')
+    output.append(f'**Total Salary: ${total_salary:.0f}**')
     
     # Отправка в Telegram
     message_text = "\n".join(output)
