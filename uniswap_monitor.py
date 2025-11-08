@@ -293,7 +293,8 @@ def send_to_telegram(message):
 def monitor_positions():
     output = []
     
-    # Новый заголовок
+    # Динамический заголовок
+    now = datetime.now()
     days_ru = {
         'Monday': 'понедельник',
         'Tuesday': 'вторник',
@@ -303,16 +304,30 @@ def monitor_positions():
         'Saturday': 'суббота',
         'Sunday': 'воскресенье'
     }
-    day_name = days_ru.get(datetime.now().strftime('%A'), 'день')
-    hour = datetime.now().hour
-    time_of_day = "утренний" if hour < 12 else "вечерний"
-    header = f"Привет сегодня {day_name} твой {time_of_day} LP обзор"
+    months_ru = {
+        1: 'января',
+        2: 'февраля',
+        3: 'марта',
+        4: 'апреля',
+        5: 'мая',
+        6: 'июня',
+        7: 'июля',
+        8: 'августа',
+        9: 'сентября',
+        10: 'октября',
+        11: 'ноября',
+        12: 'декабря'
+    }
+    day_name = days_ru.get(now.strftime('%A'), '').capitalize()
+    day_num = now.day
+    month_name = months_ru[now.month]
+    week_num = now.isocalendar()[1]
+    header = f'#Крипта #LP "{day_name} {day_num} {month_name}, неделя {week_num}" '
     output.append(header)
     
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
-            output.append(f"Error connecting to {chain_name}")
             continue
         # Используем checksum для адресов
         pm_address = w3.to_checksum_address(config['position_manager'])
@@ -323,13 +338,10 @@ def monitor_positions():
         
         for owner in addresses:
             short_name = short_names.get(owner.lower(), 'Unknown')
-            has_positions = False
+            has_data = False
             try:
                 owner_checksum = w3.to_checksum_address(owner)
                 num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
-                if num_pos > 0:
-                    output.append(f"{short_name} on {chain_name.capitalize()}:")
-                    has_positions = True
                 for i in range(num_pos):
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
                     pos = pm_contract.functions.positions(token_id).call()
@@ -384,8 +396,12 @@ def monitor_positions():
                     fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
                     fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    accrued0 = liquidity * (fee_growth_inside0 - fee_growth_inside0_last) // (1 << 128) / 10 ** dec0
-                    accrued1 = liquidity * (fee_growth_inside1 - fee_growth_inside1_last) // (1 << 128) / 10 ** dec1
+                    delta0 = fee_growth_inside0 - fee_growth_inside0_last
+                    accrued0_raw = (liquidity * max(0, delta0)) // (1 << 128)
+                    accrued0 = accrued0_raw / 10 ** dec0
+                    delta1 = fee_growth_inside1 - fee_growth_inside1_last
+                    accrued1_raw = (liquidity * max(0, delta1)) // (1 << 128)
+                    accrued1 = accrued1_raw / 10 ** dec1
                     
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
@@ -396,13 +412,16 @@ def monitor_positions():
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
                     
-                    output.append(f"  Position: {sym0}-{sym1}, (fee {fee/10000}%): {emoji}")
+                    if not has_data:
+                        output.append(f"{short_name}:")
+                        has_data = True
+                    output.append(f"  {emoji} Position: {sym0}-{sym1}, (fee {fee/10000}%):")
                     output.append(f"  Balance USD: ${balance_usd:.0f}")
                     output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
-                if has_positions:
+                if has_data:
                     output.append("---")
             except Exception as e:
-                output.append(f"Error for {short_name} on {chain_name}: {e}")
+                output.append(f"Error for {short_name}: {e}")
     
     # Отправка в Telegram
     message_text = "\n".join(output)
