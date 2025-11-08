@@ -272,14 +272,13 @@ def get_token_price(platform, token_addr):
 
 # Telegram bot config
 BOT_TOKEN = '8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8'
-CHAT_ID = '350766421'  # Ваш chat_id
+CHAT_ID = '350766421'
 
 def send_to_telegram(message):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
     payload = {
         'chat_id': CHAT_ID,
         'text': message,
-        # Removed parse_mode to avoid parsing errors
     }
     try:
         response = requests.post(url, data=payload)
@@ -290,46 +289,35 @@ def send_to_telegram(message):
     except Exception as e:
         print(f"Exception sending to Telegram: {e}")
 
+def get_week_number():
+    return datetime.now().isocalendar()[1]
+
 def monitor_positions():
     output = []
     
-    # Динамический заголовок
-    now = datetime.now()
+    # Новый заголовок с датой и неделей
     days_ru = {
-        'Monday': 'понедельник',
-        'Tuesday': 'вторник',
-        'Wednesday': 'среда',
-        'Thursday': 'четверг',
-        'Friday': 'пятница',
-        'Saturday': 'суббота',
-        'Sunday': 'воскресенье'
+        'Monday': 'Понедельник',
+        'Tuesday': 'Вторник',
+        'Wednesday': 'Среда',
+        'Thursday': 'Четверг',
+        'Friday': 'Пятница',
+        'Saturday': 'Суббота',
+        'Sunday': 'Воскресенье'
     }
-    months_ru = {
-        1: 'января',
-        2: 'февраля',
-        3: 'марта',
-        4: 'апреля',
-        5: 'мая',
-        6: 'июня',
-        7: 'июля',
-        8: 'августа',
-        9: 'сентября',
-        10: 'октября',
-        11: 'ноября',
-        12: 'декабря'
-    }
-    day_name = days_ru.get(now.strftime('%A'), '').capitalize()
-    day_num = now.day
-    month_name = months_ru[now.month]
-    week_num = now.isocalendar()[1]
-    header = f'#Крипта #LP "{day_name} {day_num} {month_name}, неделя {week_num}" '
+    day_name = days_ru.get(datetime.now().strftime('%A'), 'День')
+    day_num = datetime.now().day
+    month_num = datetime.now().month
+    week_num = get_week_number()
+    header = f"#Крипта #LP \"{day_name} {day_num} ноября, неделя {week_num}\""
     output.append(header)
     
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
+            output.append(f"Error connecting to {chain_name}")
             continue
-        # Используем checksum для адресов
+        
         pm_address = w3.to_checksum_address(config['position_manager'])
         factory_address = w3.to_checksum_address(config['factory'])
         
@@ -338,16 +326,20 @@ def monitor_positions():
         
         for owner in addresses:
             short_name = short_names.get(owner.lower(), 'Unknown')
-            has_data = False
+            positions_data = []
+            
             try:
                 owner_checksum = w3.to_checksum_address(owner)
                 num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
+                
                 for i in range(num_pos):
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
                     pos = pm_contract.functions.positions(token_id).call()
                     liquidity = pos[7]
+                    
                     if liquidity == 0:
                         continue
+                    
                     token0 = pos[2]
                     token1 = pos[3]
                     fee = pos[4]
@@ -396,15 +388,15 @@ def monitor_positions():
                     fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
                     fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    delta0 = fee_growth_inside0 - fee_growth_inside0_last
-                    accrued0_raw = (liquidity * max(0, delta0)) // (1 << 128)
-                    accrued0 = accrued0_raw / 10 ** dec0
-                    delta1 = fee_growth_inside1 - fee_growth_inside1_last
-                    accrued1_raw = (liquidity * max(0, delta1)) // (1 << 128)
-                    accrued1 = accrued1_raw / 10 ** dec1
+                    accrued0 = liquidity * (fee_growth_inside0 - fee_growth_inside0_last) // (1 << 128) / 10 ** dec0
+                    accrued1 = liquidity * (fee_growth_inside1 - fee_growth_inside1_last) // (1 << 128) / 10 ** dec1
                     
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
+                    
+                    # Проверка на отрицательные значения (ошибка расчета)
+                    if uncollected0 < 0 or uncollected1 < 0 or amount0 < 0 or amount1 < 0:
+                        continue
                     
                     price0 = get_token_price(config['platform'], token0)
                     price1 = get_token_price(config['platform'], token1)
@@ -412,16 +404,17 @@ def monitor_positions():
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
                     
-                    if not has_data:
-                        output.append(f"{short_name}:")
-                        has_data = True
-                    output.append(f"  {emoji} Position: {sym0}-{sym1}, (fee {fee/10000}%):")
-                    output.append(f"  Balance USD: ${balance_usd:.0f}")
-                    output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
-                if has_data:
-                    output.append("---")
+                    position_text = f"{emoji} {sym0}-{sym1} ({fee/10000}%): ${balance_usd:.0f} | Зарплата: ${uncollected_fees_usd:.0f}"
+                    positions_data.append(position_text)
+                
+                # Выводим данные только если есть позиции
+                if positions_data:
+                    output.append(f"{short_name}:")
+                    for pos in positions_data:
+                        output.append(f"  {pos}")
+                    
             except Exception as e:
-                output.append(f"Error for {short_name}: {e}")
+                print(f"Error for {short_name} on {chain_name}: {e}")
     
     # Отправка в Telegram
     message_text = "\n".join(output)
