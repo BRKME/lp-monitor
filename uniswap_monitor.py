@@ -255,6 +255,24 @@ chains = {
         'factory': '0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7',
         'position_manager': '0x7b8A01B39D58278b5DE7e48c8449c9f4F5170613',
         'platform': 'binance-smart-chain',
+    },
+    'polygon': {
+        'rpc': 'https://polygon-rpc.com',
+        'factory': '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+        'position_manager': '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
+        'platform': 'polygon-pos',
+    },
+    'optimism': {
+        'rpc': 'https://mainnet.optimism.io',
+        'factory': '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+        'position_manager': '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
+        'platform': 'optimistic-ethereum',
+    },
+    'ethereum': {
+        'rpc': 'https://eth.llamarpc.com',
+        'factory': '0x1F98431c8aD98523631AE4a59f267346ea31F984',
+        'position_manager': '0xC36442b4a4522E871399CD717aBDD847Ab11FE88',
+        'platform': 'ethereum',
     }
 }
 
@@ -305,6 +323,7 @@ def get_week_number():
 
 def monitor_positions():
     output = []
+    debug_output = []
     
     now = datetime.now()
     days_ru = {
@@ -346,12 +365,23 @@ def monitor_positions():
                 owner_checksum = w3.to_checksum_address(owner)
                 num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
                 
+                # Диагностика для 4F_Exodus
+                if short_name == '4F_Exodus':
+                    debug_output.append(f"\n=== DEBUG 4F_Exodus на {chain_name} ===")
+                    debug_output.append(f"Адрес: {owner_checksum}")
+                    debug_output.append(f"Позиций: {num_pos}")
+                
                 for i in range(num_pos):
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
                     pos = pm_contract.functions.positions(token_id).call()
                     liquidity = pos[7]
                     
+                    if short_name == '4F_Exodus':
+                        print(f"  Token ID {i}: {token_id}, liquidity: {liquidity}")
+                    
                     if liquidity == 0:
+                        if short_name == '4F_Exodus':
+                            print(f"    -> пропущен (liquidity = 0)")
                         continue
                     
                     token0 = pos[2]
@@ -428,17 +458,31 @@ def monitor_positions():
                     output.append(f"  {emoji} Position: {sym0}-{sym1}, (fee {fee/10000}%):")
                     output.append(f"  Balance USD: ${balance_usd:.0f}")
                     output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
+                    
+                    # Отладка для 4F_Exodus
+                    if short_name == '4F_Exodus':
+                        print(f"    -> Пара: {sym0}-{sym1}, fees: ${uncollected_fees_usd:.2f}")
                 
                 if has_data:
                     output.append("---")
+                elif short_name == '4F_Exodus':
+                    debug_output.append(f"ВНИМАНИЕ: 4F_Exodus НЕ НАЙДЕН на {chain_name}!")
                     
             except Exception as e:
                 print(f"Error for {short_name} on {chain_name}: {e}")
+                if short_name == '4F_Exodus':
+                    debug_output.append(f"ERROR 4F_Exodus на {chain_name}: {str(e)}")
     
     output.append('')
     output.append(f'Total Salary: ${total_salary:.0f}')
     
     message_text = "\n".join(output)
+    
+    # Добавляем дебаг в сообщение если есть проблемы с 4F_Exodus
+    if debug_output:
+        debug_text = "\n".join(debug_output)
+        message_text = message_text + "\n\n" + debug_text
+    
     send_to_telegram(message_text)
     print(message_text)
 
