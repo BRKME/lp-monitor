@@ -407,6 +407,13 @@ def monitor_positions():
                     delta1 = fee_growth_inside1 - fee_growth_inside1_last
                     accrued1 = liquidity * max(0, delta1) // (1 << 128) / 10 ** dec1
                     
+                    # Debug для 2F_MMS и ZRO-WETH
+                    if short_name == '2F_MMS' and 'ZRO' in sym0 or 'ZRO' in sym1:
+                        print(f"DEBUG 2F_MMS ZRO-WETH: token_id={token_id}, liquidity={liquidity}, tick_lower={tick_lower}, tick_upper={tick_upper}")
+                        print(f"  fee_growth_inside0={fee_growth_inside0}, last0={fee_growth_inside0_last}, delta0={delta0}, accrued0={accrued0}")
+                        print(f"  fee_growth_inside1={fee_growth_inside1}, last1={fee_growth_inside1_last}, delta1={delta1}, accrued1={accrued1}")
+                        print(f"  owed0={owed0}, owed1={owed1}, dec0={dec0}, dec1={dec1}")
+                    
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
                     
