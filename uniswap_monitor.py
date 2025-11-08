@@ -2,7 +2,6 @@ import json
 from web3 import Web3
 import requests
 from datetime import datetime
-import time
 
 # Минимальные ABI
 FACTORY_ABI = [
@@ -32,6 +31,13 @@ POOL_ABI = [
             {"internalType": "uint8", "name": "feeProtocol", "type": "uint8"},
             {"internalType": "bool", "name": "unlocked", "type": "bool"}
         ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "liquidity",
+        "outputs": [{"internalType": "uint128", "name": "", "type": "uint128"}],
         "stateMutability": "view",
         "type": "function"
     },
@@ -108,11 +114,23 @@ POSITION_MANAGER_ABI = [
 ]
 
 ERC20_ABI = [
-    {"constant": True, "inputs": [], "name": "decimals", "outputs": [{"name": "", "type": "uint8"}], "type": "function"},
-    {"constant": True, "inputs": [], "name": "symbol", "outputs": [{"name": "", "type": "string"}], "type": "function"}
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "type": "function"
+    },
+    {
+        "constant": True,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function"
+    }
 ]
 
-# Функции для TickMath
+# Функции для TickMath (порт из Solidity)
 def get_sqrt_ratio_at_tick(tick):
     MAX_TICK = 887272
     abs_tick = abs(tick)
@@ -157,11 +175,15 @@ def get_sqrt_ratio_at_tick(tick):
         ratio = (ratio * 0x2216e584f5fa1ea926041bedfe98) >> 128
     if (abs_tick & 0x80000) != 0:
         ratio = (ratio * 0x48a170391f7dc42444e8fa2) >> 128
+
     if tick > 0:
         ratio = ((1 << 256) - 1) // ratio
+
+    # Округление вверх если нужно
     sqrt_price_x96 = (ratio >> 32) + (0 if ratio % (1 << 32) == 0 else 1)
     return sqrt_price_x96
 
+# Функции для LiquidityAmounts (порт из Solidity, integer math)
 def get_amount0_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
     if sqrt_ratio_a > sqrt_ratio_b:
         sqrt_ratio_a, sqrt_ratio_b = sqrt_ratio_b, sqrt_ratio_a
@@ -175,6 +197,7 @@ def get_amount1_for_liquidity(sqrt_ratio_a, sqrt_ratio_b, liquidity):
 def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
     if sqrt_a > sqrt_b:
         sqrt_a, sqrt_b = sqrt_b, sqrt_a
+
     if sqrt_ratio <= sqrt_a:
         return get_amount0_for_liquidity(sqrt_a, sqrt_b, liquidity), 0
     elif sqrt_ratio < sqrt_b:
@@ -184,21 +207,27 @@ def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
     else:
         return 0, get_amount1_for_liquidity(sqrt_a, sqrt_b, liquidity)
 
+# Функция для расчета feeGrowthInside
 def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
+    # Fee growth below
     if current_tick >= tick_lower:
         fee_growth_below0 = pool_contract.functions.ticks(tick_lower).call()[2]
         fee_growth_below1 = pool_contract.functions.ticks(tick_lower).call()[3]
     else:
         fee_growth_below0 = fee_growth_global0 - pool_contract.functions.ticks(tick_lower).call()[2]
         fee_growth_below1 = fee_growth_global1 - pool_contract.functions.ticks(tick_lower).call()[3]
+
+    # Fee growth above
     if current_tick < tick_upper:
         fee_growth_above0 = pool_contract.functions.ticks(tick_upper).call()[2]
         fee_growth_above1 = pool_contract.functions.ticks(tick_upper).call()[3]
     else:
         fee_growth_above0 = fee_growth_global0 - pool_contract.functions.ticks(tick_upper).call()[2]
         fee_growth_above1 = fee_growth_global1 - pool_contract.functions.ticks(tick_upper).call()[3]
+
     fee_growth_inside0 = fee_growth_global0 - fee_growth_below0 - fee_growth_above0
     fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
+
     return fee_growth_inside0, fee_growth_inside1
 
 # Конфиг сетей
@@ -220,7 +249,7 @@ chains = {
 addresses = [
     '0x17e6D71D30d260e30BB7721C63539694aB02b036',
     '0x91dad140AF2800B2D660e530B9F42500Eee474a0',
-    '0x4e7240952C21C811d9e1237a328b927685a21418',
+    '0x4e7240952C21C811d9e1237a328b927685A21418',
     '0x3c2c34B9bB0b00145142FFeE68475E1AC01C92bA',
     '0x5A51f62D86F5CCB8C7470Cea2AC982762049c53c'
 ]
@@ -236,19 +265,24 @@ short_names = {
 def get_token_price(platform, token_addr):
     url = f'https://api.coingecko.com/api/v3/simple/token_price/{platform}?contract_addresses={token_addr}&vs_currencies=usd'
     try:
-        resp = requests.get(url, timeout=10).json()
+        resp = requests.get(url).json()
         return resp.get(token_addr.lower(), {}).get('usd', 0)
     except:
         return 0
 
+# Telegram bot config
 BOT_TOKEN = '8442392037:AAEiM_b4QfdFLqbmmc1PXNvA99yxmFVLEp8'
-CHAT_ID = '350766421'
+CHAT_ID = '350766421'  # Ваш chat_id
 
 def send_to_telegram(message):
     url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
-    payload = {'chat_id': CHAT_ID, 'text': message}
+    payload = {
+        'chat_id': CHAT_ID,
+        'text': message,
+        # Removed parse_mode to avoid parsing errors
+    }
     try:
-        response = requests.post(url, data=payload, timeout=10)
+        response = requests.post(url, data=payload)
         if response.status_code == 200:
             print("Message sent to Telegram successfully.")
         else:
@@ -259,31 +293,28 @@ def send_to_telegram(message):
 def monitor_positions():
     output = []
     
-    # Заголовок #Крипта #LP
-    now = datetime.now()
+    # Новый заголовок
     days_ru = {
-        'Monday': 'понедельник', 'Tuesday': 'вторник', 'Wednesday': 'среда',
-        'Thursday': 'четверг', 'Friday': 'пятница', 'Saturday': 'суббота', 'Sunday': 'воскресенье'
+        'Monday': 'понедельник',
+        'Tuesday': 'вторник',
+        'Wednesday': 'среда',
+        'Thursday': 'четверг',
+        'Friday': 'пятница',
+        'Saturday': 'суббота',
+        'Sunday': 'воскресенье'
     }
-    months_ru = {
-        1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля', 5: 'мая', 6: 'июня',
-        7: 'июля', 8: 'августа', 9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря'
-    }
-    
-    day_name = days_ru.get(now.strftime('%A'), 'день')
-    day_num = now.day
-    month_name = months_ru.get(now.month, '')
-    week_num = now.isocalendar()[1]
-    
-    header = f"#Крипта #LP\n{day_name.capitalize()} {day_num} {month_name}, неделя {week_num}"
+    day_name = days_ru.get(datetime.now().strftime('%A'), 'день')
+    hour = datetime.now().hour
+    time_of_day = "утренний" if hour < 12 else "вечерний"
+    header = f"Привет сегодня {day_name} твой {time_of_day} LP обзор"
     output.append(header)
-    output.append("")  # Пустая строка
     
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
+            output.append(f"Error connecting to {chain_name}")
             continue
-        
+        # Используем checksum для адресов
         pm_address = w3.to_checksum_address(config['position_manager'])
         factory_address = w3.to_checksum_address(config['factory'])
         
@@ -293,28 +324,27 @@ def monitor_positions():
         for owner in addresses:
             short_name = short_names.get(owner.lower(), 'Unknown')
             has_positions = False
-            position_lines = []
-            
             try:
                 owner_checksum = w3.to_checksum_address(owner)
                 num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
-                
-                if num_pos == 0:
-                    continue  # Пропускаем если нет позиций
-                
+                if num_pos > 0:
+                    output.append(f"{short_name} on {chain_name.capitalize()}:")
+                    has_positions = True
                 for i in range(num_pos):
-                    time.sleep(0.5)
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
                     pos = pm_contract.functions.positions(token_id).call()
                     liquidity = pos[7]
                     if liquidity == 0:
                         continue
-                    
-                    has_positions = True
-                    token0, token1, fee = pos[2], pos[3], pos[4]
-                    tick_lower, tick_upper = pos[5], pos[6]
-                    fee_growth_inside0_last, fee_growth_inside1_last = pos[8], pos[9]
-                    tokens_owed0, tokens_owed1 = pos[10], pos[11]
+                    token0 = pos[2]
+                    token1 = pos[3]
+                    fee = pos[4]
+                    tick_lower = pos[5]
+                    tick_upper = pos[6]
+                    fee_growth_inside0_last = pos[8]
+                    fee_growth_inside1_last = pos[9]
+                    tokens_owed0 = pos[10]
+                    tokens_owed1 = pos[11]
                     
                     token0_checksum = w3.to_checksum_address(token0)
                     token1_checksum = w3.to_checksum_address(token1)
@@ -326,13 +356,15 @@ def monitor_positions():
                     pool_addr_checksum = w3.to_checksum_address(pool_addr)
                     pool_contract = w3.eth.contract(address=pool_addr_checksum, abi=POOL_ABI)
                     slot0 = pool_contract.functions.slot0().call()
-                    sqrt_price_x96, current_tick = slot0[0], slot0[1]
+                    sqrt_price_x96 = slot0[0]
+                    current_tick = slot0[1]
                     
                     in_range = tick_lower <= current_tick < tick_upper
                     emoji = '🟢' if in_range else '🔴'
                     
                     sqrt_lower = get_sqrt_ratio_at_tick(tick_lower)
                     sqrt_upper = get_sqrt_ratio_at_tick(tick_upper)
+                    
                     amount0, amount1 = get_amounts_for_liquidity(sqrt_price_x96, sqrt_lower, sqrt_upper, liquidity)
                     
                     token0_contract = w3.eth.contract(token0_checksum, abi=ERC20_ABI)
@@ -342,59 +374,41 @@ def monitor_positions():
                     sym0 = token0_contract.functions.symbol().call()
                     sym1 = token1_contract.functions.symbol().call()
                     
-                    amount0 = abs(amount0) / 10 ** dec0
-                    amount1 = abs(amount1) / 10 ** dec1
+                    amount0 /= 10 ** dec0
+                    amount1 /= 10 ** dec1
                     owed0 = tokens_owed0 / 10 ** dec0
                     owed1 = tokens_owed1 / 10 ** dec1
                     
-                    # Расчет fees с защитой от переполнения
-                    try:
-                        fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
-                        fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
-                        fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(
-                            pool_contract, tick_lower, tick_upper, current_tick,
-                            fee_growth_global0, fee_growth_global1
-                        )
-                        
-                        delta0 = fee_growth_inside0 - fee_growth_inside0_last
-                        delta1 = fee_growth_inside1 - fee_growth_inside1_last
-                        
-                        # Проверка на переполнение
-                        if delta0 > (1 << 200) or delta1 > (1 << 200) or delta0 < 0 or delta1 < 0:
-                            accrued0 = 0
-                            accrued1 = 0
-                        else:
-                            accrued0 = max(0, (liquidity * delta0) // (1 << 128)) / 10 ** dec0
-                            accrued1 = max(0, (liquidity * delta1) // (1 << 128)) / 10 ** dec1
-                    except:
-                        accrued0 = 0
-                        accrued1 = 0
+                    # Расчет accrued fees
+                    fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
+                    fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
+                    fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    uncollected0 = max(0, owed0 + accrued0)
-                    uncollected1 = max(0, owed1 + accrued1)
+                    accrued0 = liquidity * (fee_growth_inside0 - fee_growth_inside0_last) // (1 << 128) / 10 ** dec0
+                    accrued1 = liquidity * (fee_growth_inside1 - fee_growth_inside1_last) // (1 << 128) / 10 ** dec1
                     
-                    price0 = get_token_price(config['platform'], token0.lower())
-                    price1 = get_token_price(config['platform'], token1.lower())
+                    uncollected0 = owed0 + accrued0
+                    uncollected1 = owed1 + accrued1
                     
-                    balance_usd = max(0, amount0 * price0 + amount1 * price1)
-                    uncollected_fees_usd = max(0, uncollected0 * price0 + uncollected1 * price1)
+                    price0 = get_token_price(config['platform'], token0)
+                    price1 = get_token_price(config['platform'], token1)
                     
-                    position_lines.append(f"  {emoji} Position: {sym0}-{sym1} (fee {fee/10000}%)")
-                    position_lines.append(f"  Balance USD: ${balance_usd:.0f}")
-                    position_lines.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
-                
-                # Выводим только если есть позиции
+                    balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
+                    uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
+                    
+                    output.append(f"  Position: {sym0}-{sym1}, (fee {fee/10000}%): {emoji}")
+                    output.append(f"  Balance USD: ${balance_usd:.0f}")
+                    output.append(f"  My Salary: ${uncollected_fees_usd:.0f}")
                 if has_positions:
-                    output.append(f"{short_name}:")
-                    output.extend(position_lines)
                     output.append("---")
-                
-                time.sleep(2)
             except Exception as e:
-                pass  # Пропускаем ошибки
+                output.append(f"Error for {short_name} on {chain_name}: {e}")
     
+    # Отправка в Telegram
     message_text = "\n".join(output)
     send_to_telegram(message_text)
+    
+    # Для отладки также выводим в консоль
     print(message_text)
 
 if __name__ == "__main__":
