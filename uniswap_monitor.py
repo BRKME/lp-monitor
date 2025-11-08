@@ -207,7 +207,7 @@ def get_amounts_for_liquidity(sqrt_ratio, sqrt_a, sqrt_b, liquidity):
     else:
         return 0, get_amount1_for_liquidity(sqrt_a, sqrt_b, liquidity)
 
-# Функция для расчета feeGrowthInside (исправленная)
+# Функция для расчета feeGrowthInside
 def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1):
     # Кэшируем вызовы ticks
     ticks_lower = pool_contract.functions.ticks(tick_lower).call()
@@ -215,16 +215,16 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
 
     # Fee growth below
     if current_tick >= tick_lower:
-        fee_growth_below0 = ticks_lower[2]  # feeGrowthOutside0X128
-        fee_growth_below1 = ticks_lower[3]  # feeGrowthOutside1X128
+        fee_growth_below0 = ticks_lower[2]
+        fee_growth_below1 = ticks_lower[3]
     else:
         fee_growth_below0 = fee_growth_global0 - ticks_lower[2]
         fee_growth_below1 = fee_growth_global1 - ticks_lower[3]
 
     # Fee growth above
     if current_tick < tick_upper:
-        fee_growth_above0 = ticks_upper[2]  # feeGrowthOutside0X128
-        fee_growth_above1 = ticks_upper[3]  # feeGrowthOutside1X128
+        fee_growth_above0 = ticks_upper[2]
+        fee_growth_above1 = ticks_upper[3]
     else:
         fee_growth_above0 = fee_growth_global0 - ticks_upper[2]
         fee_growth_above1 = fee_growth_global1 - ticks_upper[3]
@@ -233,23 +233,6 @@ def get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, f
     fee_growth_inside1 = fee_growth_global1 - fee_growth_below1 - fee_growth_above1
 
     return fee_growth_inside0, fee_growth_inside1
-
-# Функция для расчета accrued fees (исправленная)
-def calculate_accrued_fees(liquidity, fee_growth_inside0, fee_growth_inside1, fee_growth_inside0_last, fee_growth_inside1_last, dec0, dec1):
-    # Используем модульную арифметику для больших чисел (как в Solidity)
-    delta0 = (fee_growth_inside0 - fee_growth_inside0_last) & ((1 << 256) - 1)
-    delta1 = (fee_growth_inside1 - fee_growth_inside1_last) & ((1 << 256) - 1)
-    
-    # Расчет accrued fees
-    accrued0 = 0
-    accrued1 = 0
-    
-    if delta0 > 0:
-        accrued0 = liquidity * delta0 // (1 << 128)
-    if delta1 > 0:
-        accrued1 = liquidity * delta1 // (1 << 128)
-    
-    return accrued0 / 10 ** dec0, accrued1 / 10 ** dec1
 
 # Конфиг сетей
 chains = {
@@ -347,7 +330,6 @@ def monitor_positions():
     for chain_name, config in chains.items():
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         if not w3.is_connected():
-            print(f"Не удалось подключиться к {chain_name}")
             continue
         
         pm_address = w3.to_checksum_address(config['position_manager'])
@@ -360,17 +342,9 @@ def monitor_positions():
             short_name = short_names.get(owner.lower(), 'Unknown')
             has_data = False
             
-            # Отладка для 4F_Exodus
-            if short_name == '4F_Exodus':
-                print(f"DEBUG: Обработка 4F_Exodus на {chain_name}")
-            
             try:
                 owner_checksum = w3.to_checksum_address(owner)
                 num_pos = pm_contract.functions.balanceOf(owner_checksum).call()
-                
-                # Отладка для 4F_Exodus
-                if short_name == '4F_Exodus':
-                    print(f"DEBUG: 4F_Exodus имеет {num_pos} позиций на {chain_name}")
                 
                 for i in range(num_pos):
                     token_id = pm_contract.functions.tokenOfOwnerByIndex(owner_checksum, i).call()
@@ -378,8 +352,6 @@ def monitor_positions():
                     liquidity = pos[7]
                     
                     if liquidity == 0:
-                        if short_name == '4F_Exodus':
-                            print(f"DEBUG: Позиция {token_id} имеет liquidity = 0, пропускаем")
                         continue
                     
                     token0 = pos[2]
@@ -397,8 +369,6 @@ def monitor_positions():
                     
                     pool_addr = factory_contract.functions.getPool(token0_checksum, token1_checksum, fee).call()
                     if pool_addr == '0x0000000000000000000000000000000000000000':
-                        if short_name == '4F_Exodus':
-                            print(f"DEBUG: Пул не найден для {token0}-{token1}")
                         continue
                     
                     pool_addr_checksum = w3.to_checksum_address(pool_addr)
@@ -427,32 +397,21 @@ def monitor_positions():
                     owed0 = tokens_owed0 / 10 ** dec0
                     owed1 = tokens_owed1 / 10 ** dec1
                     
-                    # Расчет accrued fees с исправленной логикой
+                    # Расчет accrued fees - СОВМЕЩЕННАЯ ЛОГИКА
                     fee_growth_global0 = pool_contract.functions.feeGrowthGlobal0X128().call()
                     fee_growth_global1 = pool_contract.functions.feeGrowthGlobal1X128().call()
                     fee_growth_inside0, fee_growth_inside1 = get_fee_growth_inside(pool_contract, tick_lower, tick_upper, current_tick, fee_growth_global0, fee_growth_global1)
                     
-                    # Используем исправленную функцию расчета accrued fees
-                    accrued0, accrued1 = calculate_accrued_fees(
-                        liquidity, 
-                        fee_growth_inside0, 
-                        fee_growth_inside1, 
-                        fee_growth_inside0_last, 
-                        fee_growth_inside1_last, 
-                        dec0, 
-                        dec1
-                    )
+                    # Используем логику из первого кода (работает для 4F_Exodus)
+                    # но без max(0, delta) чтобы не обнулять отрицательные значения
+                    delta0 = fee_growth_inside0 - fee_growth_inside0_last
+                    delta1 = fee_growth_inside1 - fee_growth_inside1_last
+                    
+                    accrued0 = liquidity * delta0 // (1 << 128) / 10 ** dec0
+                    accrued1 = liquidity * delta1 // (1 << 128) / 10 ** dec1
                     
                     uncollected0 = owed0 + accrued0
                     uncollected1 = owed1 + accrued1
-                    
-                    # Детальный дебаг для 4F_Exodus
-                    if short_name == '4F_Exodus':
-                        print(f"DEBUG 4F_Exodus:")
-                        print(f"  token_id={token_id}, liquidity={liquidity}")
-                        print(f"  pair={sym0}-{sym1}, fee={fee/10000}%")
-                        print(f"  amount0={amount0}, amount1={amount1}")
-                        print(f"  uncollected0={uncollected0}, uncollected1={uncollected1}")
                     
                     price0 = get_token_price(config['platform'], token0)
                     price1 = get_token_price(config['platform'], token1)
@@ -460,6 +419,7 @@ def monitor_positions():
                     balance_usd = amount0 * price0 + amount1 * price1 + uncollected0 * price0 + uncollected1 * price1
                     uncollected_fees_usd = uncollected0 * price0 + uncollected1 * price1
                     
+                    # Убираем проверку на отрицательные значения
                     total_salary += uncollected_fees_usd
                     
                     if not has_data:
@@ -471,15 +431,9 @@ def monitor_positions():
                 
                 if has_data:
                     output.append("---")
-                elif short_name == '4F_Exodus':
-                    print(f"DEBUG: 4F_Exodus не имеет активных позиций с liquidity > 0")
                     
             except Exception as e:
                 print(f"Error for {short_name} on {chain_name}: {e}")
-                # Детальный дебаг ошибок для 4F_Exodus
-                if short_name == '4F_Exodus':
-                    import traceback
-                    print(f"DEBUG 4F_Exodus error details: {traceback.format_exc()}")
     
     # Итоговая сумма
     output.append('')
